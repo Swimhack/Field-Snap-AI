@@ -1,0 +1,45 @@
+{
+  "name": "field-snap-ai",
+  "version": "0.1.0",
+  "description": "Field Snap AI MVP - Lead processing pipeline with OCR and data enrichment",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch functions/ingest.ts",
+    "logs": "bun run --watch functions/logs.ts",
+    "build": "bun build functions/ingest.ts --outdir dist",
+    "start": "bun run functions/ingest.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src functions --ext .ts,.tsx",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "@google-cloud/vision": "^4.0.2",
+    "zod": "^3.22.4",
+    "nodemailer": "^6.9.7",
+    "twilio": "^4.20.0",
+    "web-push": "^3.6.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/nodemailer": "^6.4.14",
+    "@typescript-eslint/eslint-plugin": "^6.13.1",
+    "@typescript-eslint/parser": "^6.13.1",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "keywords": [
+    "ai",
+    "ocr",
+    "lead-processing",
+    "image-analysis",
+    "typescript",
+    "bun"
+  ],
+  "author": "Field Snap AI Team",
+  "license": "MIT"
+}
