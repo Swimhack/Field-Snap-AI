@@ -478,10 +478,14 @@ Bun.serve({
 
                     log('debug', `Serving static file: ${filePath}`, { contentType, size: file.size, component: 'static', requestId });
 
+                    const cacheControl = (ext === '.html' || ext === '.js' || ext === '.css')
+                      ? 'no-cache'
+                      : 'max-age=3600';
+
                     return new Response(file, {
                         headers: {
                             'Content-Type': contentType,
-                            'Cache-Control': ext === '.html' ? 'no-cache' : 'max-age=3600',
+                            'Cache-Control': cacheControl,
                             'Access-Control-Allow-Origin': '*',
                             'X-Request-Id': requestId,
                         },
