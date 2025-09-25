@@ -1,0 +1,35 @@
+# Fly.io configuration for Field Snap AI
+app = "fieldsnap-ai"
+primary_region = "dfw"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[http_service.checks]]
+  interval = "10s"
+  grace_period = "5s"
+  method = "GET"
+  path = "/"
+  protocol = "http"
+  timeout = "2s"
+
+[processes]
+  app = "bun run production-server.ts"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+

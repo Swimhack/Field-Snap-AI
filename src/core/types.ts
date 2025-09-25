@@ -14,7 +14,10 @@ import { z } from 'zod';
 
 export const UUIDSchema = z.string().uuid();
 export const TimestampSchema = z.string().datetime();
-export const URLSchema = z.string().url();
+export const URLSchema = z.string().refine((url) => {
+  // Allow regular URLs and data URLs
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:');
+}, 'Invalid URL format');
 export const PhoneSchema = z.string().regex(/^\+?[\d\s\-\(\)\.]+$/, 'Invalid phone number format');
 export const EmailSchema = z.string().email();
 

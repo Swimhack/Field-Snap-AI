@@ -1,0 +1,406 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Field Snap AI - Leads API",
+    "description": "Lead management and retrieval endpoints",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.fieldsnap.ai",
+      "description": "Production server"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Development server"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/leads/{id}": {
+      "get": {
+        "summary": "Get complete lead information",
+        "description": "Retrieves full lead data including enrichment, scoring, and outreach history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Lead UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete lead information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FullLead"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leads/{id}/replay": {
+      "post": {
+        "summary": "Replay lead processing pipeline",
+        "description": "Re-runs the complete processing pipeline for an existing lead with updated data",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Lead UUID"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Pipeline replay queued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Lead pipeline replay started"
+                    },
+                    "processing_id": {
+                      "type": "string",
+                      "example": "replay_1706020920_def456"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Lead not found"
+          },
+          "409": {
+            "description": "Lead currently processing"
+          }
+        }
+      }
+    },
+    "/api/leads": {
+      "get": {
+        "summary": "List leads with filtering",
+        "description": "Retrieves paginated list of leads with optional filtering",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "processing", "enriched", "scored", "needs_review", "completed", "failed"]
+            },
+            "description": "Filter by processing status"
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["low", "medium", "high"]
+            },
+            "description": "Filter by lead priority"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "description": "Page number for pagination"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Number of leads per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of leads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "leads": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LeadSummary"
+                      }
+                    },
+                    "pagination": {
+                      "$ref": "#/components/schemas/PaginationInfo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "FullLead": {
+        "type": "object",
+        "properties": {
+          "lead": {
+            "$ref": "#/components/schemas/Lead"
+          },
+          "enrichment": {
+            "$ref": "#/components/schemas/LeadEnrichment"
+          },
+          "scoring": {
+            "$ref": "#/components/schemas/LeadScoring"
+          },
+          "outreach": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outreach"
+            }
+          }
+        }
+      },
+      "Lead": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "business_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "processing_status": {
+            "type": "string",
+            "enum": ["pending", "processing", "enriched", "scored", "needs_review", "completed", "failed"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "LeadEnrichment": {
+        "type": "object",
+        "properties": {
+          "website_found": {
+            "type": "boolean"
+          },
+          "website_quality": {
+            "type": "number",
+            "format": "float"
+          },
+          "reviews": {
+            "type": "object",
+            "properties": {
+              "total_count": {
+                "type": "integer"
+              },
+              "avg_rating": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          "category": {
+            "type": "string"
+          }
+        }
+      },
+      "LeadScoring": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "recommended_offers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Outreach": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string",
+            "enum": ["sms", "email"]
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "preview_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "approved", "sent", "delivered", "failed"]
+          }
+        }
+      },
+      "LeadSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "business_name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number",
+            "format": "float"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "processing_status": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PaginationInfo": {
+        "type": "object",
+        "properties": {
+          "current_page": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "items_per_page": {
+            "type": "integer"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": ["success", "error"]
+      }
+    }
+  }
+}

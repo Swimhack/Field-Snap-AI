@@ -299,28 +299,49 @@ curl http://localhost:3001/health/notifications
 
 ## 🚀 Deployment Options
 
-### Serverless Functions
+### ✨ Quick Deploy to Fly.io (Recommended)
+
+Deploy to **snap.fly.dev** in under 5 minutes:
+
+```bash
+# 1. Install Fly CLI
+curl -L https://fly.io/install.sh | sh
+
+# 2. Authenticate
+fly auth login
+
+# 3. Deploy with our script
+./scripts/deploy.sh
+```
+
+**Live Demo**: https://snap.fly.dev
+
+### Other Deployment Options
+
+#### Serverless Functions
 - **Netlify Functions**
 - **Vercel Functions**
 - **Supabase Edge Functions**
 - **AWS Lambda**
 
-### Traditional Hosting
+#### Traditional Hosting
 - **DigitalOcean Droplets**
 - **Railway**
 - **Render**
 - **Heroku**
 
-### Container Deployment
+#### Container Deployment
 ```dockerfile
 FROM oven/bun:1
 WORKDIR /app
 COPY package.json bun.lockb ./
 RUN bun install
 COPY . .
-EXPOSE 3001
+EXPOSE 8080
 CMD ["bun", "run", "start"]
 ```
+
+For detailed deployment instructions, see [deploy.md](./deploy.md).
 
 ## 🧪 Testing
 

@@ -43,7 +43,7 @@ export class NotificationProvider {
     };
 
     if (config.host && config.auth.user && config.auth.pass) {
-      this.emailTransporter = nodemailer.createTransporter(config);
+      this.emailTransporter = nodemailer.createTransport(config);
     }
   }
 

@@ -187,7 +187,7 @@ class OpenAIVisionProvider implements OCRProvider {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4-vision-preview',
+          model: 'gpt-4o',
           messages: [
             {
               role: 'user',
@@ -250,80 +250,63 @@ class OpenAIVisionProvider implements OCRProvider {
 }
 
 // =============================================================================
-// MOCK PROVIDER (FOR DEVELOPMENT/TESTING)
+// TESSERACT OCR PROVIDER (OFFLINE/LOCAL PROCESSING)
 // =============================================================================
 
-class MockOCRProvider implements OCRProvider {
-  name = 'Mock OCR';
+class TesseractOCRProvider implements OCRProvider {
+  name = 'Tesseract OCR';
 
   isConfigured(): boolean {
-    return process.env.MOCK_OCR === 'true';
+    // Tesseract is always available as it runs locally
+    return true;
   }
 
   getCapabilities() {
     return {
       supportsMultipleLanguages: true,
       supportsBoundingBoxes: true,
-      maxFileSize: 100,
+      maxFileSize: 50, // Reasonable limit for client-side processing
       supportedFormats: ['JPEG', 'PNG', 'GIF', 'WEBP', 'BMP'],
     };
   }
 
   async extractText(imageUrl: string): Promise<OCRResult> {
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const startTime = Date.now();
 
-    const mockResults = [
-      {
-        text: `ABC Plumbing Services
-Phone: (555) 123-4567
-Email: info@abcplumbing.com
-www.abcplumbing.com
-24/7 Emergency Service
-Licensed & Insured
-Drain Cleaning • Water Heaters • Pipe Repair`,
-        businessName: 'ABC Plumbing Services',
-      },
-      {
-        text: `Maria's Landscaping
-(555) 987-6543
-mariaslandscaping@email.com
-Professional Tree Trimming
-Lawn Maintenance
-Garden Design
-Free Estimates!`,
-        businessName: 'Maria\'s Landscaping',
-      },
-      {
-        text: `Johnson Electrical
-Licensed Electrician
-Call: 555-456-7890
-johnson.electric@gmail.com
-Residential & Commercial
-Wiring • Outlets • Panel Upgrades
-Available Weekends`,
-        businessName: 'Johnson Electrical',
-      },
-    ];
+    try {
+      // Dynamic import for server-side usage
+      const { createWorker } = await import('tesseract.js');
 
-    const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
+      console.log('Initializing Tesseract OCR worker...');
+      const worker = await createWorker('eng');
 
-    return {
-      text: randomResult.text,
-      confidence: 0.85 + Math.random() * 0.1, // 85-95% confidence
-      boundingBoxes: [
-        {
-          text: randomResult.businessName,
-          x: 50,
-          y: 20,
-          width: 200,
-          height: 30,
-          confidence: 0.95,
-        },
-      ],
-      detectedLanguage: 'en',
-      processingTime: 1000,
-    };
+      console.log('Processing image with Tesseract...');
+      const { data } = await worker.recognize(imageUrl);
+
+      await worker.terminate();
+
+      // Convert Tesseract format to our OCRResult format
+      const boundingBoxes = data.words?.map(word => ({
+        text: word.text,
+        x: word.bbox.x0,
+        y: word.bbox.y0,
+        width: word.bbox.x1 - word.bbox.x0,
+        height: word.bbox.y1 - word.bbox.y0,
+        confidence: word.confidence / 100, // Convert 0-100 to 0-1
+      })) || [];
+
+      return {
+        text: data.text.trim(),
+        confidence: data.confidence / 100, // Convert 0-100 to 0-1
+        boundingBoxes,
+        detectedLanguage: 'en',
+        processingTime: Date.now() - startTime,
+      };
+
+    } catch (error) {
+      console.error('Tesseract OCR failed:', error);
+      throw new Error(`Tesseract OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }
 
@@ -331,7 +314,7 @@ Available Weekends`,
 // OCR FACTORY
 // =============================================================================
 
-export type OCRProviderType = 'google_vision' | 'openai_vision' | 'mock';
+export type OCRProviderType = 'google_vision' | 'openai_vision' | 'tesseract';
 
 export class OCRFactory {
   private static providers: Map<OCRProviderType, OCRProvider> = new Map();
@@ -357,8 +340,8 @@ export class OCRFactory {
       case 'openai_vision':
         provider = new OpenAIVisionProvider();
         break;
-      case 'mock':
-        provider = new MockOCRProvider();
+      case 'tesseract':
+        provider = new TesseractOCRProvider();
         break;
       default:
         throw new Error(`Unknown OCR provider: ${type}`);
@@ -370,10 +353,11 @@ export class OCRFactory {
   }
 
   static async getConfiguredProvider(): Promise<OCRProvider> {
-    const primaryProvider = process.env.OCR_PRIMARY_PROVIDER as OCRProviderType || 'google_vision';
-    const fallbackProvider = process.env.OCR_FALLBACK_PROVIDER as OCRProviderType || 'openai_vision';
+    const primaryProvider = process.env.OCR_PRIMARY_PROVIDER as OCRProviderType || 'openai_vision';
+    const fallbackProvider = process.env.OCR_FALLBACK_PROVIDER as OCRProviderType || 'google_vision';
+    const finalFallback = process.env.OCR_FINAL_FALLBACK as OCRProviderType || 'tesseract';
 
-    // Try primary provider first
+    // Try primary provider first (OpenAI Vision)
     try {
       const primary = this.getProvider(primaryProvider);
       if (primary.isConfigured()) {
@@ -383,7 +367,7 @@ export class OCRFactory {
       console.warn(`Primary OCR provider (${primaryProvider}) failed:`, error);
     }
 
-    // Try fallback provider
+    // Try fallback provider (Google Vision)
     try {
       const fallback = this.getProvider(fallbackProvider);
       if (fallback.isConfigured()) {
@@ -394,20 +378,25 @@ export class OCRFactory {
       console.warn(`Fallback OCR provider (${fallbackProvider}) failed:`, error);
     }
 
-    // Use mock provider if in development
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Using mock OCR provider for development');
-      return this.getProvider('mock');
+    // Try final fallback (Tesseract - always available)
+    try {
+      const final = this.getProvider(finalFallback);
+      if (final.isConfigured()) {
+        console.warn(`Using final fallback OCR provider: ${final.name}`);
+        return final;
+      }
+    } catch (error) {
+      console.warn(`Final fallback OCR provider (${finalFallback}) failed:`, error);
     }
 
-    throw new Error('No OCR provider is configured and available');
+    throw new Error('All OCR providers failed. This should not happen as Tesseract should always be available.');
   }
 
   static getAllProviders(): OCRProvider[] {
     return [
       new GoogleVisionProvider(),
       new OpenAIVisionProvider(),
-      new MockOCRProvider(),
+      new TesseractOCRProvider(),
     ];
   }
 
@@ -431,18 +420,63 @@ export class OCRFactory {
 // =============================================================================
 
 /**
- * Extract text from an image using the configured OCR provider
+ * Extract text from an image using real OCR providers with retry logic and fallback
  */
 export async function extractTextFromImage(imageUrl: string): Promise<OCRResult> {
-  const provider = await OCRFactory.getConfiguredProvider();
-  
-  try {
-    return await provider.extractText(imageUrl);
-  } catch (error) {
-    // Log the error and throw a user-friendly message
-    console.error(`OCR extraction failed with provider ${provider.name}:`, error);
-    throw new Error(`Failed to extract text from image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  const errors: string[] = [];
+
+  // Try OpenAI Vision first with retry logic
+  const openaiProvider = OCRFactory.getProvider('openai_vision');
+  if (openaiProvider.isConfigured()) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`Attempting OpenAI Vision OCR (attempt ${attempt}/2)`);
+        return await openaiProvider.extractText(imageUrl);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.warn(`OpenAI Vision attempt ${attempt} failed: ${errorMsg}`);
+        errors.push(`OpenAI attempt ${attempt}: ${errorMsg}`);
+
+        // If rate limited, wait before retry (but only once)
+        if (attempt === 1 && (errorMsg.includes('429') || errorMsg.includes('Too Many Requests'))) {
+          const waitTime = 2000; // 2 second wait
+          console.log(`Rate limited, waiting ${waitTime}ms before retry`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+  } else {
+    errors.push('OpenAI Vision not configured');
   }
+
+  // Try Google Vision as fallback
+  const googleProvider = OCRFactory.getProvider('google_vision');
+  if (googleProvider.isConfigured()) {
+    try {
+      console.log('Falling back to Google Vision OCR');
+      return await googleProvider.extractText(imageUrl);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Google Vision failed: ${errorMsg}`);
+      errors.push(`Google Vision: ${errorMsg}`);
+    }
+  } else {
+    errors.push('Google Vision not configured');
+  }
+
+  // Try Tesseract as final fallback (always available)
+  try {
+    console.log('Falling back to Tesseract OCR (local processing)');
+    const tesseractProvider = OCRFactory.getProvider('tesseract');
+    return await tesseractProvider.extractText(imageUrl);
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`Tesseract OCR failed: ${errorMsg}`);
+    errors.push(`Tesseract: ${errorMsg}`);
+  }
+
+  // If absolutely everything failed
+  throw new Error(`All OCR providers failed: ${errors.join('; ')}`);
 }
 
 /**
@@ -459,7 +493,7 @@ export function getOCRProviderStatus() {
 export {
   GoogleVisionProvider,
   OpenAIVisionProvider,
-  MockOCRProvider,
+  TesseractOCRProvider,
 };
 
 export default OCRFactory;

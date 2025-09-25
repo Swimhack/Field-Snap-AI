@@ -9,9 +9,11 @@
 import { IngestRequestSchema, IngestResponseSchema } from '../src/core/types';
 import { db } from '../src/providers/db';
 import { extractTextFromImage } from '../src/providers/ocr';
+import { analyzeImage, compareAnalysisWithOCR } from '../src/providers/image-analysis';
 import { enrichment } from '../src/providers/enrich';
 import { scoring } from '../src/providers/scoring';
 import { notifications } from '../src/providers/notifications';
+import { searchBusinessInfo } from '../src/providers/websearch';
 import { createLogger, generateRequestId, loggerMiddleware } from '../src/utils/logger';
 import type { Lead, CreateLead } from '../src/core/types';
 
@@ -102,22 +104,139 @@ export class LeadProcessingPipeline {
   }
 
   /**
-   * Step 2: OCR Processing
+   * Step 2: Enhanced Image Analysis and OCR Processing
    */
   private async performOCR(lead: Lead): Promise<void> {
-    this.logger.info('Starting OCR processing', { leadId: lead.id });
-    
+    this.logger.info('🔍 OCR START: Starting enhanced image analysis and OCR processing', {
+      leadId: lead.id,
+      imageUrl: lead.image_url.substring(0, 50) + '...',
+      imageType: lead.image_url.startsWith('data:') ? 'base64' : 'url'
+    });
+
     try {
-      const ocrResult = await this.logger.time(
-        'OCR extraction',
-        () => extractTextFromImage(lead.image_url),
-        { leadId: lead.id }
-      );
+      // Step 2a: Enhanced Image Analysis (as specified)
+      this.logger.info('🖼️ IMAGE ANALYSIS: Starting enhanced visual analysis', { leadId: lead.id });
+
+      let imageAnalysis;
+      try {
+        imageAnalysis = await this.logger.time(
+          'Image analysis',
+          () => analyzeImage(lead.image_url),
+          { leadId: lead.id }
+        );
+
+        this.logger.info('✅ IMAGE ANALYSIS: Enhanced visual analysis completed', {
+          leadId: lead.id,
+          shape: imageAnalysis.mainSubject.shape,
+          colors: imageAnalysis.mainSubject.colors,
+          estimatedTextLines: imageAnalysis.mainSubject.estimatedText,
+          layout: imageAnalysis.mainSubject.layout,
+          confidence: imageAnalysis.confidence,
+          processingTime: imageAnalysis.processingTime
+        });
+      } catch (analysisError) {
+        this.logger.error('❌ IMAGE ANALYSIS ERROR: Enhanced visual analysis failed', {
+          leadId: lead.id,
+          error: analysisError instanceof Error ? analysisError.message : String(analysisError),
+          stack: analysisError instanceof Error ? analysisError.stack : undefined
+        });
+        throw new Error(`Image analysis failed: ${analysisError instanceof Error ? analysisError.message : 'Unknown error'}`);
+      }
+
+      // Step 2b: OCR Processing
+      this.logger.info('📝 OCR: Starting text extraction from image', { leadId: lead.id });
+
+      let ocrResult;
+      try {
+        ocrResult = await this.logger.time(
+          'OCR extraction',
+          () => extractTextFromImage(lead.image_url),
+          { leadId: lead.id }
+        );
+
+        this.logger.info('✅ OCR: Text extraction completed', {
+          leadId: lead.id,
+          textLength: ocrResult.text.length,
+          confidence: ocrResult.confidence,
+          provider: ocrResult.provider || 'unknown',
+          extractedText: ocrResult.text.substring(0, 200) + (ocrResult.text.length > 200 ? '...' : '')
+        });
+      } catch (ocrError) {
+        this.logger.error('❌ OCR ERROR: Text extraction failed', {
+          leadId: lead.id,
+          error: ocrError instanceof Error ? ocrError.message : String(ocrError),
+          stack: ocrError instanceof Error ? ocrError.stack : undefined
+        });
+        throw new Error(`OCR processing failed: ${ocrError instanceof Error ? ocrError.message : 'Unknown error'}`);
+      }
+
+      // Step 2c: Compare Image Analysis with OCR Results
+      this.logger.info('🔍 COMPARISON: Comparing image analysis with OCR results', { leadId: lead.id });
+
+      let comparison;
+      try {
+        comparison = compareAnalysisWithOCR(imageAnalysis, ocrResult.text);
+
+        this.logger.info('✅ COMPARISON: Analysis vs OCR comparison completed', {
+          leadId: lead.id,
+          similarity: comparison.similarity,
+          discrepancyCount: comparison.discrepancies.length,
+          recommendationCount: comparison.recommendations.length,
+          discrepancies: comparison.discrepancies,
+          recommendations: comparison.recommendations
+        });
+
+        if (comparison.similarity < 0.5) {
+          this.logger.warn('⚠️ QUALITY WARNING: Low similarity between image analysis and OCR results', {
+            leadId: lead.id,
+            similarity: comparison.similarity,
+            discrepancies: comparison.discrepancies,
+            recommendations: comparison.recommendations
+          });
+        }
+      } catch (comparisonError) {
+        this.logger.error('❌ COMPARISON ERROR: Failed to compare analysis with OCR', {
+          leadId: lead.id,
+          error: comparisonError instanceof Error ? comparisonError.message : String(comparisonError)
+        });
+        // Don't throw here, just continue with degraded functionality
+        comparison = { similarity: 0, discrepancies: ['Comparison failed'], recommendations: ['Manual review recommended'] };
+      }
 
       // Parse extracted text for business information
-      const parsedData = this.parseBusinessInfo(ocrResult.text);
+      this.logger.info('📊 PARSING: Extracting business information from text', { leadId: lead.id });
 
-      // Update lead with OCR results
+      let parsedData;
+      try {
+        parsedData = this.parseBusinessInfo(ocrResult.text);
+
+        this.logger.info('✅ PARSING: Business information extracted', {
+          leadId: lead.id,
+          businessName: parsedData.businessName,
+          hasPhone: !!parsedData.phoneNumber,
+          hasEmail: !!parsedData.email,
+          hasWebsite: !!parsedData.website,
+          hasAddress: !!parsedData.address,
+          servicesCount: parsedData.services?.length || 0
+        });
+      } catch (parseError) {
+        this.logger.error('❌ PARSING ERROR: Failed to parse business information', {
+          leadId: lead.id,
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+          text: ocrResult.text.substring(0, 200) + '...'
+        });
+        // Set default values for failed parsing
+        parsedData = {
+          businessName: null,
+          phoneNumber: null,
+          email: null,
+          website: null,
+          address: null,
+          services: []
+        };
+      }
+
+      // Update lead with OCR results and image analysis
       await db.updateLead(lead.id, {
         raw_ocr_text: ocrResult.text,
         business_name: parsedData.businessName,
@@ -132,11 +251,21 @@ export class LeadProcessingPipeline {
           ocr_completed_at: new Date().toISOString(),
           enrichment_started_at: new Date().toISOString(),
         },
+        // Store image analysis results in source_notes for now
+        source_notes: `${lead.source_notes || ''}\n\nIMAGE ANALYSIS:\nShape: ${imageAnalysis.mainSubject.shape}\nColors: ${imageAnalysis.mainSubject.colors.join(', ')}\nEstimated Text: ${imageAnalysis.mainSubject.estimatedText.join(' | ')}\nLayout: ${imageAnalysis.mainSubject.layout}\nConfidence: ${imageAnalysis.confidence}\nSimilarity to OCR: ${comparison.similarity}\n\nVISUAL DESCRIPTION:\n${imageAnalysis.visualDescription}`.trim(),
       });
 
-      this.logger.info('OCR processing completed', {
+      this.logger.info('Enhanced OCR processing completed', {
         leadId: lead.id,
-        data: { confidence: ocrResult.confidence, textLength: ocrResult.text.length, businessName: parsedData.businessName },
+        data: {
+          ocrConfidence: ocrResult.confidence,
+          textLength: ocrResult.text.length,
+          businessName: parsedData.businessName,
+          imageAnalysisConfidence: imageAnalysis.confidence,
+          analysisOcrSimilarity: comparison.similarity,
+          shape: imageAnalysis.mainSubject.shape,
+          colorsFound: imageAnalysis.mainSubject.colors.length
+        },
       });
 
     } catch (error) {
@@ -150,7 +279,7 @@ export class LeadProcessingPipeline {
    */
   private async performEnrichment(lead: Lead): Promise<void> {
     this.logger.info('Starting data enrichment', { leadId: lead.id });
-    
+
     try {
       // Get the updated lead data
       const updatedLead = await db.getLeadById(lead.id);
@@ -166,6 +295,36 @@ export class LeadProcessingPipeline {
           ),
           { leadId: lead.id }
         );
+
+        // If missing critical information, perform web search
+        if (!updatedLead.website || !updatedLead.email || !updatedLead.phone_number) {
+          this.logger.info('Performing web search for missing information', { leadId: lead.id });
+
+          const webSearchResult = await searchBusinessInfo(
+            updatedLead.business_name,
+            updatedLead.address || updatedLead.source_location,
+            {
+              phoneNumber: updatedLead.phone_number,
+              email: updatedLead.email,
+              website: updatedLead.website,
+              address: updatedLead.address
+            }
+          );
+
+          // Merge web search results
+          enrichmentResult.website = enrichmentResult.website || webSearchResult.website;
+          enrichmentResult.socialMedia = { ...enrichmentResult.socialMedia, ...webSearchResult.socialMedia };
+          enrichmentResult.businessHours = enrichmentResult.businessHours || webSearchResult.businessHours;
+          enrichmentResult.reviews = enrichmentResult.reviews || (webSearchResult.reviews && typeof webSearchResult.reviews === 'object' && 'google' in webSearchResult.reviews ? webSearchResult.reviews : {});
+
+          // Update lead with web search results
+          if (!updatedLead.phone_number && webSearchResult.phoneNumber) {
+            await db.updateLead(lead.id, { phone_number: webSearchResult.phoneNumber });
+          }
+          if (!updatedLead.email && webSearchResult.email) {
+            await db.updateLead(lead.id, { email: webSearchResult.email });
+          }
+        }
 
         // Update lead with enriched data
         await db.updateLead(lead.id, {
@@ -187,7 +346,7 @@ export class LeadProcessingPipeline {
         });
       } else {
         this.logger.warn('Skipping enrichment - no business name found', { leadId: lead.id });
-        
+
         await db.updateLead(lead.id, {
           processing_steps: {
             ...lead.processing_steps,
@@ -512,7 +671,8 @@ P.S. This is a genuine opportunity - we've helped similar businesses increase th
 export async function handler(request: Request): Promise<Response> {
   const requestId = generateRequestId();
   const logger = createLogger('ingest', requestId);
-  
+  const startTime = Date.now();
+
   // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -520,13 +680,29 @@ export async function handler(request: Request): Promise<Response> {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   };
 
+  logger.info('🖼️ IMAGE UPLOAD: New ingest request started', {
+    requestId,
+    method: request.method,
+    url: request.url,
+    timestamp: new Date().toISOString(),
+    userAgent: request.headers.get('user-agent'),
+    origin: request.headers.get('origin'),
+    contentType: request.headers.get('content-type')
+  });
+
   // Handle OPTIONS request for CORS
   if (request.method === 'OPTIONS') {
+    logger.info('🔀 CORS: OPTIONS request handled', { requestId });
     return new Response(null, { headers: corsHeaders });
   }
 
   // Only allow POST requests
   if (request.method !== 'POST') {
+    logger.error('❌ METHOD ERROR: Invalid HTTP method', {
+      requestId,
+      method: request.method,
+      expected: 'POST'
+    });
     return new Response(
       JSON.stringify({ error: 'Method not allowed', message: 'Only POST requests are supported' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -535,26 +711,127 @@ export async function handler(request: Request): Promise<Response> {
 
   try {
     // Parse and validate request body
-    const body = await request.json();
-    const validatedRequest = IngestRequestSchema.parse(body);
+    logger.info('📋 PARSING: Reading request body', { requestId });
 
-    logger.info('Ingest request received', {
-      data: { imageUrl: validatedRequest.imageUrl, sourceLocation: validatedRequest.sourceLocation },
+    let body;
+    try {
+      body = await request.json();
+
+      const imageInfo = body.imageUrl ? {
+        isDataUrl: body.imageUrl.startsWith('data:'),
+        urlLength: body.imageUrl.length,
+        mimeType: body.imageUrl.startsWith('data:') ? body.imageUrl.split(';')[0].split(':')[1] : 'unknown'
+      } : null;
+
+      logger.info('✅ PARSING: Request body parsed successfully', {
+        requestId,
+        hasImageUrl: !!body.imageUrl,
+        imageInfo,
+        sourceLocation: body.sourceLocation,
+        sourceNotes: body.sourceNotes,
+        metadata: body.metadata
+      });
+    } catch (parseError) {
+      logger.error('❌ PARSING ERROR: Failed to parse JSON request body', {
+        requestId,
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        stack: parseError instanceof Error ? parseError.stack : undefined,
+        contentType: request.headers.get('content-type')
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'JSON_PARSE_ERROR',
+          message: 'Failed to parse request body as JSON',
+          details: parseError instanceof Error ? parseError.message : 'Unknown parsing error'
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    logger.info('🔍 VALIDATION: Validating request schema', { requestId });
+
+    let validatedRequest;
+    try {
+      validatedRequest = IngestRequestSchema.parse(body);
+
+      logger.info('✅ VALIDATION: Request schema validated successfully', {
+        requestId,
+        imageUrl: validatedRequest.imageUrl.substring(0, 50) + '...',
+        sourceLocation: validatedRequest.sourceLocation,
+        validationSuccess: true
+      });
+    } catch (validationError) {
+      logger.error('❌ VALIDATION ERROR: Schema validation failed', {
+        requestId,
+        error: validationError instanceof Error ? validationError.message : String(validationError),
+        receivedKeys: Object.keys(body),
+        imageUrlType: body.imageUrl ? typeof body.imageUrl : 'undefined',
+        imageUrlValid: body.imageUrl ? (body.imageUrl.startsWith('http') || body.imageUrl.startsWith('data:')) : false
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'VALIDATION_ERROR',
+          message: validationError instanceof Error ? validationError.message : 'Schema validation failed'
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    logger.info('🚀 PROCESSING: Starting lead processing pipeline', {
+      requestId,
+      imageUrl: validatedRequest.imageUrl.substring(0, 50) + '...',
+      sourceLocation: validatedRequest.sourceLocation,
     });
 
     // Create and run processing pipeline
     const pipeline = new LeadProcessingPipeline(requestId);
-    
-    // Start processing (async)
-    const processingPromise = pipeline.processLead(
-      validatedRequest.imageUrl,
-      validatedRequest.sourceLocation,
-      validatedRequest.sourceNotes
-    );
 
-    // For now, we'll wait for completion, but in production you might want to return immediately
-    // and process in the background
-    const processedLead = await processingPromise;
+    let processedLead;
+    try {
+      logger.info('⚙️ PIPELINE: Starting image processing pipeline', { requestId });
+
+      // Start processing (async)
+      const processingPromise = pipeline.processLead(
+        validatedRequest.imageUrl,
+        validatedRequest.sourceLocation,
+        validatedRequest.sourceNotes
+      );
+
+      // For now, we'll wait for completion, but in production you might want to return immediately
+      // and process in the background
+      processedLead = await processingPromise;
+
+      logger.info('✅ PIPELINE: Processing pipeline completed successfully', {
+        requestId,
+        leadId: processedLead.id,
+        score: processedLead.lead_score,
+        status: processedLead.qualification_status,
+        processingTime: Date.now() - startTime
+      });
+
+    } catch (processingError) {
+      logger.error('❌ PIPELINE ERROR: Lead processing pipeline failed', {
+        requestId,
+        error: processingError instanceof Error ? processingError.message : String(processingError),
+        stack: processingError instanceof Error ? processingError.stack : undefined,
+        processingTime: Date.now() - startTime,
+        stage: 'pipeline_execution'
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'PROCESSING_ERROR',
+          message: processingError instanceof Error ? processingError.message : 'Lead processing failed',
+          processingId: requestId
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const response = IngestResponseSchema.parse({
       success: true,
@@ -563,8 +840,12 @@ export async function handler(request: Request): Promise<Response> {
       processingId: requestId,
     });
 
-    logger.info('Ingest request completed successfully', {
-      data: { leadId: processedLead.id, score: processedLead.lead_score, status: processedLead.qualification_status },
+    logger.info('🎉 SUCCESS: Ingest request completed successfully', {
+      requestId,
+      leadId: processedLead.id,
+      score: processedLead.lead_score,
+      status: processedLead.qualification_status,
+      totalTime: Date.now() - startTime
     });
 
     return new Response(JSON.stringify(response), {
@@ -573,7 +854,13 @@ export async function handler(request: Request): Promise<Response> {
     });
 
   } catch (error) {
-    logger.error('Ingest request failed', error as Error);
+    logger.error('❌ FATAL ERROR: Ingest request failed with unhandled error', {
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      totalTime: Date.now() - startTime,
+      stage: 'handler_execution'
+    });
 
     const errorResponse = {
       success: false,

@@ -71,7 +71,7 @@ export class StorageProvider {
   async createSignedUploadUrl(fileName: string, expiresIn = 3600): Promise<string> {
     const { data, error } = await this.supabase.storage
       .from(this.bucket)
-      .createSignedUploadUrl(fileName, expiresIn);
+      .createSignedUploadUrl(fileName, { upsert: true });
 
     if (error) {
       throw new Error(`Failed to create signed URL: ${error.message}`);

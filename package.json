@@ -4,23 +4,28 @@
   "description": "Field Snap AI MVP - Lead processing pipeline with OCR and data enrichment",
   "type": "module",
   "scripts": {
-    "dev": "bun run --watch functions/ingest.ts",
+    "dev": "bun run --watch server.ts",
+    "dev:api": "bun run --watch functions/ingest.ts",
     "logs": "bun run --watch functions/logs.ts",
-    "build": "bun build functions/ingest.ts --outdir dist",
-    "start": "bun run functions/ingest.ts",
+    "build": "bun build server.ts --outdir dist",
+    "start": "bun run server.ts",
+    "start:prod": "NODE_ENV=production PORT=8080 bun run server.ts",
     "type-check": "tsc --noEmit",
     "lint": "eslint src functions --ext .ts,.tsx",
-    "test": "bun test"
+    "test": "bun test",
+    "deploy": "fly deploy"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
     "@google-cloud/vision": "^4.0.2",
-    "zod": "^3.22.4",
+    "@supabase/supabase-js": "^2.39.0",
     "nodemailer": "^6.9.7",
+    "tesseract.js": "^6.0.1",
     "twilio": "^4.20.0",
-    "web-push": "^3.6.6"
+    "web-push": "^3.6.6",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/bun": "^1.2.22",
     "@types/node": "^20.10.0",
     "@types/nodemailer": "^6.4.14",
     "@typescript-eslint/eslint-plugin": "^6.13.1",

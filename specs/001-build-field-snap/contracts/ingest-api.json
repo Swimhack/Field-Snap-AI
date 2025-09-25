@@ -1,0 +1,198 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Field Snap AI - Ingest API",
+    "description": "Lead processing pipeline endpoint for image ingestion",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.fieldsnap.ai",
+      "description": "Production server"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Development server"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/ingest": {
+      "post": {
+        "summary": "Ingest business photo for lead processing",
+        "description": "Accepts a business advertisement photo and triggers the complete lead processing pipeline",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["image_url"],
+                "properties": {
+                  "image_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL to business photo in Supabase storage",
+                    "example": "https://supabase.co/storage/v1/object/public/leads-raw/2025/01/uuid.jpg"
+                  },
+                  "captured_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the photo was captured",
+                    "example": "2025-01-23T18:22:00Z"
+                  },
+                  "geo": {
+                    "type": "object",
+                    "properties": {
+                      "lat": {
+                        "type": "number",
+                        "format": "float",
+                        "minimum": -90,
+                        "maximum": 90,
+                        "description": "Latitude where photo was taken"
+                      },
+                      "lng": {
+                        "type": "number",
+                        "format": "float",
+                        "minimum": -180,
+                        "maximum": 180,
+                        "description": "Longitude where photo was taken"
+                      }
+                    },
+                    "required": ["lat", "lng"]
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Optional notes about the business location",
+                    "example": "Truck wrap on Mason Rd near park"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Lead processing queued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "lead_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Unique identifier for the created lead"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Lead processing started successfully"
+                    },
+                    "processing_id": {
+                      "type": "string",
+                      "description": "Unique processing identifier for tracking",
+                      "example": "req_1706020920_abc123"
+                    }
+                  },
+                  "required": ["success", "lead_id", "message"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Image file too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Admin bearer token for API access"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message"
+          },
+          "code": {
+            "type": "string",
+            "description": "Error code for programmatic handling"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional error context"
+          }
+        },
+        "required": ["success", "error"]
+      }
+    }
+  }
+}

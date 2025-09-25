@@ -16,6 +16,11 @@ export interface LogContext {
   duration?: number;
   errorCode?: string;
   data?: Record<string, any>;
+  businessName?: string;
+  error?: any;
+  stack_trace?: string;
+  location?: string;
+  foundData?: any;
 }
 
 export class Logger {

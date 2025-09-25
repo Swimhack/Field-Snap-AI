@@ -1,0 +1,306 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Field Snap AI - Logs API",
+    "description": "Application logging and monitoring endpoints",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.fieldsnap.ai",
+      "description": "Production server"
+    },
+    {
+      "url": "http://localhost:3001",
+      "description": "Development server"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/logs": {
+      "get": {
+        "summary": "Get application logs",
+        "description": "Retrieves application logs with filtering and pagination for monitoring and debugging",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["debug", "info", "warn", "error", "fatal"]
+            },
+            "description": "Filter by log level"
+          },
+          {
+            "name": "component",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["ocr", "enrichment", "scoring", "outreach", "api", "queue", "auth"]
+            },
+            "description": "Filter by system component"
+          },
+          {
+            "name": "lead_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Filter logs for specific lead"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Show logs since this timestamp"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "Show logs until this timestamp"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            },
+            "description": "Maximum number of log entries"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Application logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "logs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LogEntry"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "total_count": {
+                          "type": "integer"
+                        },
+                        "filtered_count": {
+                          "type": "integer"
+                        },
+                        "time_range": {
+                          "type": "object",
+                          "properties": {
+                            "start": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "end": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          }
+        }
+      }
+    },
+    "/api/health/db": {
+      "get": {
+        "summary": "Database health check",
+        "description": "Checks database connectivity and performance",
+        "responses": {
+          "200": {
+            "description": "Database is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database is unhealthy"
+          }
+        }
+      }
+    },
+    "/api/health/ocr": {
+      "get": {
+        "summary": "OCR providers health check",
+        "description": "Checks Google Vision and OpenAI Vision API availability",
+        "responses": {
+          "200": {
+            "description": "OCR providers are healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more OCR providers are unhealthy"
+          }
+        }
+      }
+    },
+    "/api/health/notifications": {
+      "get": {
+        "summary": "Notification providers health check",
+        "description": "Checks Twilio and email provider availability",
+        "responses": {
+          "200": {
+            "description": "Notification providers are healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more notification providers are unhealthy"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "LogEntry": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the log entry was created"
+          },
+          "level": {
+            "type": "string",
+            "enum": ["debug", "info", "warn", "error", "fatal"],
+            "description": "Log severity level"
+          },
+          "component": {
+            "type": "string",
+            "description": "System component that generated the log"
+          },
+          "message": {
+            "type": "string",
+            "description": "Log message"
+          },
+          "lead_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Associated lead ID if applicable"
+          },
+          "processing_id": {
+            "type": "string",
+            "description": "Processing request ID for correlation"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Additional structured data",
+            "additionalProperties": true
+          },
+          "duration_ms": {
+            "type": "integer",
+            "description": "Operation duration in milliseconds"
+          },
+          "error_code": {
+            "type": "string",
+            "description": "Error code for programmatic handling"
+          },
+          "stack_trace": {
+            "type": "string",
+            "description": "Stack trace for errors"
+          }
+        },
+        "required": ["timestamp", "level", "component", "message"]
+      },
+      "HealthStatus": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "degraded", "unhealthy"]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "response_time_ms": {
+            "type": "integer",
+            "description": "Health check response time"
+          },
+          "details": {
+            "type": "object",
+            "description": "Component-specific health details",
+            "additionalProperties": true
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["healthy", "degraded", "unhealthy"]
+                },
+                "response_time_ms": {
+                  "type": "integer"
+                },
+                "last_error": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "required": ["status", "timestamp"]
+      }
+    }
+  }
+}

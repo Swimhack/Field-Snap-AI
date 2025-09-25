@@ -1,0 +1,14 @@
+# Field Snap AI - Docker ignore file
+.git
+.gitignore
+README.md
+QUICKSTART.md
+CLAUDE.md
+.claude/
+.specify/
+specs/
+node_modules
+*.log
+.env*
+.DS_Store
+Thumbs.db
