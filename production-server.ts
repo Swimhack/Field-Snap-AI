@@ -289,7 +289,7 @@ try {
       details: "The application is deployed but missing required environment variables for full functionality.",
       required_services: [
         "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (database)",
-        "GOOGLE_CLOUD_VISION or OPENAI_API_KEY (OCR processing)",
+                        "Enhanced Tesseract OCR (primary), OPENAI_API_KEY (fallback), GOOGLE_CLOUD_VISION (legacy)",
         "TWILIO_* (SMS notifications - optional)",
         "SMTP_* (Email notifications - optional)"
       ]
@@ -500,7 +500,7 @@ Bun.serve({
                     processingTime,
                     success: response.status < 400,
                     systemInfo: {
-                        ocrProvider: process.env.OCR_PROVIDER || 'google_vision',
+                        ocrProvider: process.env.OCR_PROVIDER || 'tesseract',
                         mockOcrEnabled: process.env.MOCK_OCR === 'true',
                         databaseMode: process.env.SUPABASE_URL ? 'supabase' : 'mock'
                     }
@@ -525,7 +525,7 @@ Bun.serve({
                         hasSupabaseKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
                         hasOpenaiKey: !!process.env.OPENAI_API_KEY,
                         hasGoogleCredentials: !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
-                        ocrProvider: process.env.OCR_PROVIDER || 'google_vision',
+                        ocrProvider: process.env.OCR_PROVIDER || 'tesseract',
                         mockOcrEnabled: process.env.MOCK_OCR === 'true',
                         nodeEnv: process.env.NODE_ENV || 'development',
                         bunVersion: process.versions?.bun || 'unknown'
