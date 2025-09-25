@@ -154,7 +154,7 @@ console.log(`🚀 Field Snap AI Production Server starting on port ${PORT}`);
 console.log(`📍 API Endpoint: http://localhost:${PORT}/api/ingest`);
 console.log(`🌐 Web App: http://localhost:${PORT}/`);
 console.log(`📊 Logs endpoint: http://localhost:${PORT}/logs`);
-console.log(`🔐 Auth: Authorization: Bearer <LOGS_TOKEN>${LOGS_TOKEN ? '' : ' (set LOGS_TOKEN env var)'});
+console.log(`🔐 Auth: Authorization: Bearer <LOGS_TOKEN>${LOGS_TOKEN ? '' : ' (set LOGS_TOKEN env var)'}`);
 
 log('info', 'Field Snap AI Production Server starting', { port: PORT });
 
