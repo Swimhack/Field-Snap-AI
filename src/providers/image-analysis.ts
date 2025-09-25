@@ -24,6 +24,14 @@ export interface ImageDescription {
     subjectIsolationSuccess: boolean;
     businessRelevanceScore: number;
   };
+  // Methodology tracking
+  methodologySteps?: {
+    initialScan?: any;
+    subjectIdentification?: any;
+    conceptualSegmentation?: any;
+    textExtraction?: any;
+    subjectDescription?: any;
+  };
 }
 
 export interface BusinessSubject {
@@ -90,69 +98,92 @@ class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
               content: [
                 {
                   type: 'text',
-                  text: `You are an expert at analyzing business photos to identify and isolate business signage, advertisements, and other business-related subjects. Analyze this image with the following objectives:
+                  text: `You are an expert at analyzing images to identify the primary subject that the photographer intended to capture, following human-like visual scanning methodology.
 
-**PRIMARY TASK: INTELLIGENT SUBJECT IDENTIFICATION**
-1. IDENTIFY ALL BUSINESS SUBJECTS: Look for business signs, storefronts, business cards, advertisements, vehicle wraps, billboards, banners, or any display showing business information.
+**STEP 1: INITIAL VISUAL SCAN (Human-like Observation)**
+Perform an initial visual scan and identify what immediately draws attention:
+- What object(s) stand out due to color, contrast, or positioning?
+- What appears to be placed deliberately for the viewer to see?
+- What has the most visual prominence in the image?
 
-2. ISOLATE THE MAIN BUSINESS SUBJECT: Determine which business-related element is the primary focus that the user intended to capture. Ignore irrelevant objects like random people, cars, buildings, or background elements that aren't the business subject.
+**STEP 2: SUBJECT IDENTIFICATION RULES**
+Apply these rules to identify the primary subject:
 
-3. EXTRACT BUSINESS DATA: From the identified business subject, extract:
-   - Business name
-   - Phone numbers
-   - Email addresses
-   - Website URLs
-   - Physical addresses
-   - Services offered
-   - Operating hours
-   - Any other business information
+Rule 1 - TEXT PRESENCE & LEGIBILITY: Objects with clear, readable text are highly likely to be the intended subject, especially informational signs or advertisements.
 
-4. DESCRIBE DATA DISPLAY: Explain what type of data is being displayed and how it's organized (contact info, services, hours, etc.).
+Rule 2 - CENTRALITY/PROMINENCE: Objects that are centered or take up significant focused area are often the subject.
 
-5. SPATIAL ANALYSIS: Describe the location, size, and position of the business subject within the image.
+Rule 3 - CONTRAST: The subject often stands out from background due to color, shape, or lighting.
 
-**SECONDARY ANALYSIS:**
-- Shape and color analysis of the business subject
-- Text layout and organization
-- Overall visual assessment
+Rule 4 - CONTEXTUAL RELEVANCE: Objects serving informational purposes (signs, displays) are strong candidates.
 
-Please be extremely thorough in identifying business subjects and isolating them from irrelevant objects.
+**STEP 3: CONCEPTUAL SEGMENTATION**
+Once identified, mentally isolate the primary subject:
+- Draw a conceptual bounding box around just the main subject
+- Exclude supporting structures (poles, stands, frames)
+- Exclude background elements (grass, buildings, cars, people)
+- Focus only on the informational content area
 
-Format your response as JSON:
+**STEP 4: TEXT EXTRACTION & DATA STRUCTURING**
+From the isolated subject, extract and categorize ALL visible text:
+- Business Name
+- Services/Description
+- Address
+- Phone Number
+- Website/Email
+- Hours of Operation
+- Any other displayed information
+
+**STEP 5: SUBJECT DESCRIPTION**
+Describe what the subject is (type of sign/display) and what data it's displaying.
+
+Be methodical and thorough in following these steps.
+
+Format your response as JSON following this exact structure:
 {
-  "visualDescription": "detailed description of the entire image",
+  "step1_initialScan": {
+    "firstImpression": "What immediately drew your attention in the image",
+    "prominentObjects": ["object1", "object2", "..."],
+    "visualHierarchy": "Description of what stands out most"
+  },
+  "step2_subjectIdentification": {
+    "rule1_textPresence": "Assessment of text visibility and legibility",
+    "rule2_centrality": "Assessment of object positioning and prominence", 
+    "rule3_contrast": "Assessment of how subject stands out from background",
+    "rule4_contextualRelevance": "Assessment of informational purpose",
+    "primarySubject": "The identified main subject"
+  },
+  "step3_conceptualSegmentation": {
+    "boundingDescription": "Description of the isolated subject area",
+    "excludedElements": ["background elements that were filtered out"],
+    "isolationSuccess": true/false,
+    "focusArea": "Description of the isolated informational content"
+  },
+  "step4_textExtraction": {
+    "allVisibleText": ["line1", "line2", "line3", "..."],
+    "structuredData": {
+      "businessName": "extracted business name or null",
+      "services": ["service1", "service2"] or null,
+      "address": "extracted address or null", 
+      "phoneNumber": "extracted phone or null",
+      "website": "extracted website/email or null",
+      "hours": "extracted hours or null",
+      "otherInfo": ["any other information"]
+    }
+  },
+  "step5_subjectDescription": {
+    "subjectType": "Type of sign/display (business sign, storefront, billboard, etc.)",
+    "dataDisplayed": "Summary of what information is being presented",
+    "purpose": "What the sign/display is trying to communicate"
+  },
+  "visualDescription": "Complete description of the entire image",
   "mainSubject": {
     "shape": "rectangular|square|circular|irregular|unknown",
-    "colors": ["color1", "color2", "..."],
-    "estimatedText": ["estimated text line 1", "estimated text line 2", "..."],
+    "colors": ["color1", "color2"],
+    "estimatedText": ["text1", "text2"],
     "layout": "horizontal|vertical|mixed|unknown"
   },
-  "confidence": 0.0-1.0,
-  "subjectAnalysis": {
-    "detectedSubjects": [
-      {
-        "type": "business_sign|storefront|business_card|advertisement|vehicle_wrap|billboard|banner|unknown",
-        "description": "detailed description of this specific business subject",
-        "location": {
-          "position": "center|left|right|top|bottom|corner",
-          "sizeRelative": "large|medium|small"
-        },
-        "businessData": {
-          "businessName": "extracted business name if visible",
-          "phoneNumber": "extracted phone if visible",
-          "website": "extracted website if visible",
-          "services": ["service1", "service2"],
-          "address": "extracted address if visible"
-        },
-        "textContent": ["all visible text on this subject"],
-        "confidence": 0.0-1.0
-      }
-    ],
-    "primaryBusinessSubject": "index of the main business subject the user intended to capture (0-based), or null if none",
-    "otherObjects": ["list of non-business objects visible in image"],
-    "subjectIsolationSuccess": true/false,
-    "businessRelevanceScore": 0.0-1.0
-  }
+  "confidence": 0.0-1.0
 }`,
                 },
                 {
@@ -190,30 +221,87 @@ Format your response as JSON:
         analysisResult = this.parseAnalysisText(analysisText);
       }
 
+      // Extract business data from the structured methodology
+      const extractedBusinessData = analysisResult.step4_textExtraction?.structuredData || {};
+      
       return {
         visualDescription: analysisResult.visualDescription || analysisText,
         mainSubject: {
           shape: analysisResult.mainSubject?.shape || 'unknown',
           colors: analysisResult.mainSubject?.colors || [],
-          estimatedText: analysisResult.mainSubject?.estimatedText || [],
+          estimatedText: analysisResult.mainSubject?.estimatedText || 
+                        analysisResult.step4_textExtraction?.allVisibleText || [],
           layout: analysisResult.mainSubject?.layout || 'unknown',
         },
         confidence: analysisResult.confidence || 0.7,
         processingTime: Date.now() - startTime,
         subjectAnalysis: {
-          detectedSubjects: analysisResult.subjectAnalysis?.detectedSubjects || [],
-          primaryBusinessSubject: analysisResult.subjectAnalysis?.primaryBusinessSubject !== undefined 
-            ? (analysisResult.subjectAnalysis.detectedSubjects?.[analysisResult.subjectAnalysis.primaryBusinessSubject] || null)
-            : null,
-          otherObjects: analysisResult.subjectAnalysis?.otherObjects || [],
-          subjectIsolationSuccess: analysisResult.subjectAnalysis?.subjectIsolationSuccess || false,
-          businessRelevanceScore: analysisResult.subjectAnalysis?.businessRelevanceScore || 0.5,
+          detectedSubjects: [{
+            type: this.mapSubjectType(analysisResult.step5_subjectDescription?.subjectType),
+            description: analysisResult.step5_subjectDescription?.dataDisplayed || 'Unknown subject',
+            location: {
+              position: 'center' as const,
+              sizeRelative: 'large' as const,
+            },
+            businessData: {
+              businessName: extractedBusinessData.businessName,
+              phoneNumber: extractedBusinessData.phoneNumber,
+              website: extractedBusinessData.website,
+              services: extractedBusinessData.services || [],
+              address: extractedBusinessData.address,
+            },
+            textContent: analysisResult.step4_textExtraction?.allVisibleText || [],
+            confidence: analysisResult.confidence || 0.7,
+          }],
+          primaryBusinessSubject: {
+            type: this.mapSubjectType(analysisResult.step5_subjectDescription?.subjectType),
+            description: analysisResult.step5_subjectDescription?.dataDisplayed || 'Unknown subject',
+            location: {
+              position: 'center' as const,
+              sizeRelative: 'large' as const,
+            },
+            businessData: {
+              businessName: extractedBusinessData.businessName,
+              phoneNumber: extractedBusinessData.phoneNumber,
+              website: extractedBusinessData.website,
+              services: extractedBusinessData.services || [],
+              address: extractedBusinessData.address,
+            },
+            textContent: analysisResult.step4_textExtraction?.allVisibleText || [],
+            confidence: analysisResult.confidence || 0.7,
+          },
+          otherObjects: analysisResult.step3_conceptualSegmentation?.excludedElements || [],
+          subjectIsolationSuccess: analysisResult.step3_conceptualSegmentation?.isolationSuccess || false,
+          businessRelevanceScore: analysisResult.confidence || 0.5,
+        },
+        // Enhanced methodology tracking
+        methodologySteps: {
+          initialScan: analysisResult.step1_initialScan,
+          subjectIdentification: analysisResult.step2_subjectIdentification,
+          conceptualSegmentation: analysisResult.step3_conceptualSegmentation,
+          textExtraction: analysisResult.step4_textExtraction,
+          subjectDescription: analysisResult.step5_subjectDescription,
         },
       };
 
     } catch (error) {
       throw new Error(`Image analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  private mapSubjectType(subjectType?: string): 'business_sign' | 'storefront' | 'business_card' | 'advertisement' | 'vehicle_wrap' | 'billboard' | 'banner' | 'unknown' {
+    if (!subjectType) return 'unknown';
+    
+    const type = subjectType.toLowerCase();
+    if (type.includes('sign')) return 'business_sign';
+    if (type.includes('storefront') || type.includes('store')) return 'storefront';
+    if (type.includes('card')) return 'business_card';
+    if (type.includes('advertisement') || type.includes('ad')) return 'advertisement';
+    if (type.includes('vehicle') || type.includes('wrap')) return 'vehicle_wrap';
+    if (type.includes('billboard')) return 'billboard';
+    if (type.includes('banner')) return 'banner';
+    
+    return 'business_sign'; // Default to business_sign for most cases
   }
 
   private parseAnalysisText(text: string): any {
