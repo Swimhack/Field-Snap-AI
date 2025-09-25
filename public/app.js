@@ -341,38 +341,116 @@ function displayResults() {
     const resultsSection = document.getElementById('resultsSection');
     const extractedInfo = document.getElementById('extractedInfo');
 
+    // Calculate priority level based on lead score
+    const priorityLevel = app.extractedData.leadScore >= 80 ? 'High' : 
+                         app.extractedData.leadScore >= 50 ? 'Medium' : 'Low';
+
+    // Format services
+    const services = Array.isArray(app.extractedData.services) 
+        ? app.extractedData.services.join(', ') 
+        : (app.extractedData.services || '');
+
     extractedInfo.innerHTML = `
-        <div class="info-item">
-            <span class="info-label">Business Name:</span>
-            <span class="info-value editable" contenteditable="true" data-field="businessName">${app.extractedData.businessName || 'Not found'}</span>
+        <h3>Extracted Information</h3>
+        
+        <div class="info-section">
+            <h4>Business Information:</h4>
+            <div class="info-item">
+                <span class="info-label">Business Name:</span>
+                <span class="info-value editable" contenteditable="true" data-field="businessName">${app.extractedData.businessName || ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Phone Number:</span>
+                <span class="info-value editable" contenteditable="true" data-field="phoneNumber">${app.extractedData.phoneNumber || ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Email Address:</span>
+                <span class="info-value editable" contenteditable="true" data-field="email">${app.extractedData.email || ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Website URL:</span>
+                <span class="info-value editable" contenteditable="true" data-field="website">${app.extractedData.website || ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Physical Address:</span>
+                <span class="info-value editable" contenteditable="true" data-field="address">${app.extractedData.address || ''}</span>
+            </div>
         </div>
-        <div class="info-item">
-            <span class="info-label">Phone:</span>
-            <span class="info-value editable" contenteditable="true" data-field="phoneNumber">${app.extractedData.phoneNumber || 'Not found'}</span>
+
+        <div class="info-section">
+            <h4>Business Details:</h4>
+            <div class="info-item">
+                <span class="info-label">Services Offered:</span>
+                <span class="info-value">${services}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Business Description:</span>
+                <span class="info-value">${app.extractedData.rawText ? app.extractedData.rawText.substring(0, 200) + '...' : ''}</span>
+            </div>
         </div>
-        <div class="info-item">
-            <span class="info-label">Email:</span>
-            <span class="info-value editable" contenteditable="true" data-field="email">${app.extractedData.email || 'Not found'}</span>
+
+        <div class="info-section">
+            <h4>Lead Quality:</h4>
+            <div class="info-item">
+                <span class="info-label">Lead Score:</span>
+                <span class="info-value">${app.extractedData.leadScore || 0}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Status:</span>
+                <span class="info-value">${app.extractedData.qualificationStatus || ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Priority Level:</span>
+                <span class="info-value">${priorityLevel}</span>
+            </div>
         </div>
-        <div class="info-item">
-            <span class="info-label">Website:</span>
-            <span class="info-value editable" contenteditable="true" data-field="website">${app.extractedData.website || 'Not found'}</span>
+
+        <div class="info-section">
+            <h4>Additional Information:</h4>
+            <div class="info-item">
+                <span class="info-label">Social Media:</span>
+                <span class="info-value">${Object.keys(app.extractedData.socialMedia || {}).length > 0 ? Object.keys(app.extractedData.socialMedia).join(', ') : ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Business Hours:</span>
+                <span class="info-value"></span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">License/Certification:</span>
+                <span class="info-value"></span>
+            </div>
         </div>
-        <div class="info-item">
-            <span class="info-label">Address:</span>
-            <span class="info-value editable" contenteditable="true" data-field="address">${app.extractedData.address || 'Not found'}</span>
+
+        <div class="info-section">
+            <h4>Notes:</h4>
+            <div class="info-item">
+                <span class="info-label">Source Location:</span>
+                <span class="info-value">Field Snap Mobile</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Source Notes:</span>
+                <span class="info-value">Captured via web interface</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Processing Timestamp:</span>
+                <span class="info-value">${new Date().toISOString()}</span>
+            </div>
         </div>
-        <div class="info-item">
-            <span class="info-label">Services:</span>
-            <span class="info-value">${app.extractedData.services.join(', ') || 'Not found'}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Lead Score:</span>
-            <span class="info-value">${app.extractedData.leadScore}</span>
-        </div>
-        <div class="info-item">
-            <span class="info-label">Status:</span>
-            <span class="info-value">${app.extractedData.qualificationStatus}</span>
+
+        <div class="info-section">
+            <h4>Raw Data:</h4>
+            <div class="info-item">
+                <span class="info-label">OCR Text:</span>
+                <span class="info-value">${app.extractedData.rawText || ''}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Confidence Level:</span>
+                <span class="info-value">High</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Processing ID:</span>
+                <span class="info-value">${app.extractedData.id || ''}</span>
+            </div>
         </div>
     `;
 
