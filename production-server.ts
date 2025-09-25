@@ -6,6 +6,7 @@
 import path from 'path';
 import { appendFile } from 'fs/promises';
 import { db } from './src/providers/db';
+import { createLogger } from './src/utils/logger';
 
 const PORT = parseInt(process.env.PORT || '8080');
 const PUBLIC_DIR = path.join(import.meta.dir, 'public');
@@ -69,38 +70,190 @@ function redactSensitive(input: any): any {
   }
 }
 
-// Enhanced logging function
+// Enhanced logging function with database persistence
+const serverLogger = createLogger('production-server');
+
 function log(level: LogLevel, message: string, context?: any) {
-  if (LEVEL_ORDER[level] < LOG_THRESHOLD) return;
-  const now = new Date().toISOString();
-  const component = context && typeof context === 'object' ? (context.component as string | undefined) : undefined;
-  const requestId = context && typeof context === 'object' ? (context.requestId as string | undefined) : undefined;
-  const entry: LogEntry = {
-    id: nextLogId++,
-    timestamp: now,
-    level,
-    message,
-    component,
-    requestId,
-    context: redactSensitive(context)
+  // Keep in-memory logging for backwards compatibility and performance
+  if (LEVEL_ORDER[level] >= LOG_THRESHOLD) {
+    const now = new Date().toISOString();
+    const component = context && typeof context === 'object' ? (context.component as string | undefined) : undefined;
+    const requestId = context && typeof context === 'object' ? (context.requestId as string | undefined) : undefined;
+    const entry: LogEntry = {
+      id: nextLogId++,
+      timestamp: now,
+      level,
+      message,
+      component,
+      requestId,
+      context: redactSensitive(context)
+    };
+
+    logs.push(entry);
+    if (logs.length > LOGS_MAX_ENTRIES) {
+      logs.splice(0, logs.length - LOGS_MAX_ENTRIES);
+    }
+
+    // Best-effort append to file if configured
+    if (LOG_FILE_PATH) {
+      const line = JSON.stringify(entry) + '\n';
+      appendFile(LOG_FILE_PATH, line).catch((e) => {
+        console.error('Failed to append log file:', e);
+      });
+    }
+
+    // Also log to console
+    console.log(`[${now}] ${level.toUpperCase()}: ${message}`, context || '');
+  }
+
+  // Also use database logger for persistence and comprehensive tracking
+  const logger = context?.requestId ? createLogger(context.component || 'server', context.requestId) : serverLogger;
+  
+  const logContext = {
+    ...context,
+    component: context?.component || 'server',
+    data: context || {}
   };
 
-  logs.push(entry);
-  if (logs.length > LOGS_MAX_ENTRIES) {
-    logs.splice(0, logs.length - LOGS_MAX_ENTRIES);
+  switch (level) {
+    case 'debug':
+      logger.debug(message, logContext);
+      break;
+    case 'info':
+      logger.info(message, logContext);
+      break;
+    case 'warn':
+      logger.warn(message, logContext);
+      break;
+    case 'error':
+      logger.error(message, context?.error, logContext);
+      break;
+    default:
+      logger.info(message, logContext);
   }
+}
 
-  // Best-effort append to file if configured
-  if (LOG_FILE_PATH) {
-    const line = JSON.stringify(entry) + '\n';
-    appendFile(LOG_FILE_PATH, line).catch((e) => {
-      // Avoid recursive log; print to stderr only
-      console.error('Failed to append log file:', e);
+// Function to get comprehensive logs from both in-memory and database
+async function getComprehensiveLogs(filters: {
+  level?: LogLevel;
+  component?: string;
+  requestId?: string;
+  since?: string;
+  until?: string;
+  search?: string;
+  limit?: number;
+}) {
+  try {
+    // Get database logs for comprehensive tracking
+    const dbResult = await db.getLogs({
+      limit: filters.limit || 500,
+      level: filters.level,
+      component: filters.component,
+      requestId: filters.requestId,
+      startDate: filters.since,
+      endDate: filters.until,
     });
-  }
 
-  // Also log to console
-  console.log(`[${now}] ${level.toUpperCase()}: ${message}`, context || '');
+    let dbLogs = dbResult.logs.map(log => ({
+      id: `db_${log.id}`,
+      timestamp: log.created_at,
+      level: log.level,
+      message: log.message,
+      component: log.component,
+      requestId: log.request_id,
+      leadId: log.lead_id,
+      context: {
+        ...log.data,
+        duration: log.duration_ms,
+        errorCode: log.error_code,
+        stackTrace: log.stack_trace,
+        source: 'database'
+      }
+    }));
+
+    // Get in-memory logs for recent real-time activity
+    let memoryLogs = logs.map(log => ({
+      ...log,
+      id: `mem_${log.id}`,
+      context: {
+        ...log.context,
+        source: 'memory'
+      }
+    }));
+
+    // Apply filters to memory logs
+    if (filters.level) {
+      memoryLogs = memoryLogs.filter(log => log.level === filters.level);
+    }
+    if (filters.component) {
+      memoryLogs = memoryLogs.filter(log => log.component === filters.component);
+    }
+    if (filters.requestId) {
+      memoryLogs = memoryLogs.filter(log => log.requestId === filters.requestId);
+    }
+    if (filters.since) {
+      memoryLogs = memoryLogs.filter(log => log.timestamp >= filters.since!);
+    }
+    if (filters.until) {
+      memoryLogs = memoryLogs.filter(log => log.timestamp <= filters.until!);
+    }
+
+    // Apply search filter if specified
+    if (filters.search) {
+      const needle = filters.search.toLowerCase();
+      dbLogs = dbLogs.filter(log =>
+        log.message.toLowerCase().includes(needle) ||
+        JSON.stringify(log.context || {}).toLowerCase().includes(needle)
+      );
+      memoryLogs = memoryLogs.filter(log =>
+        log.message.toLowerCase().includes(needle) ||
+        JSON.stringify(log.context || {}).toLowerCase().includes(needle)
+      );
+    }
+
+    // Combine and sort by timestamp (most recent first)
+    const allLogs = [...dbLogs, ...memoryLogs].sort((a, b) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    // Apply final limit
+    const finalLogs = allLogs.slice(0, filters.limit || 500);
+
+    return {
+      logs: finalLogs,
+      total: dbResult.total + logs.length,
+      sources: {
+        database: dbLogs.length,
+        memory: memoryLogs.length
+      }
+    };
+  } catch (error) {
+    console.error('Failed to fetch comprehensive logs:', error);
+    // Fallback to in-memory logs only
+    let filteredLogs = [...logs];
+    
+    // Apply filters to fallback logs
+    if (filters.level) filteredLogs = filteredLogs.filter(l => l.level === filters.level);
+    if (filters.component) filteredLogs = filteredLogs.filter(l => l.component === filters.component);
+    if (filters.requestId) filteredLogs = filteredLogs.filter(l => l.requestId === filters.requestId);
+    if (filters.since) filteredLogs = filteredLogs.filter(l => l.timestamp >= filters.since!);
+    if (filters.until) filteredLogs = filteredLogs.filter(l => l.timestamp <= filters.until!);
+    
+    if (filters.search) {
+      const needle = filters.search.toLowerCase();
+      filteredLogs = filteredLogs.filter(l =>
+        (l.message && l.message.toLowerCase().includes(needle)) ||
+        JSON.stringify(l.context || {}).toLowerCase().includes(needle)
+      );
+    }
+
+    return { 
+      logs: filteredLogs.slice(-200), 
+      total: filteredLogs.length,
+      sources: { database: 0, memory: filteredLogs.length },
+      error: 'Database logs unavailable - showing memory logs only'
+    };
+  }
 }
 
 // Graceful import of the ingest handler
@@ -239,36 +392,36 @@ Bun.serve({
 
             log('info', 'Logs accessed via public endpoint', { requestId, component: 'logs' });
 
-            // Filtering and formatting
+            // Enhanced filtering and formatting for image processing analysis
             const level = url.searchParams.get('level') as LogLevel | null;
             const component = url.searchParams.get('component') || null;
             const requestIdFilter = url.searchParams.get('requestId') || null;
+            const leadId = url.searchParams.get('leadId') || null;
             const search = url.searchParams.get('search');
             const since = url.searchParams.get('since');
             const until = url.searchParams.get('until');
             const format = (url.searchParams.get('format') || 'json').toLowerCase();
             const download = (url.searchParams.get('download') || '').toLowerCase();
             const limitParam = url.searchParams.get('limit');
+            
+            // New specialized filters for image processing analysis
+            const imageProcessingOnly = url.searchParams.get('imageProcessing') === 'true';
+            const extractionAttemptsOnly = url.searchParams.get('extractionAttempts') === 'true';
+            const errorsOnly = url.searchParams.get('errorsOnly') === 'true';
+            const successfulExtractions = url.searchParams.get('successfulExtractions') === 'true';
 
-            let filteredLogs = logs.slice();
+            // Get comprehensive logs from both database and memory
+            const logsResult = await getComprehensiveLogs({
+              level,
+              component,
+              requestId: requestIdFilter,
+              since,
+              until,
+              search,
+              limit: Math.max(1, Math.min(parseInt(limitParam || '500'), LOGS_MAX_ENTRIES))
+            });
 
-            if (level) filteredLogs = filteredLogs.filter(l => l.level === level);
-            if (component) filteredLogs = filteredLogs.filter(l => l.component === component);
-            if (requestIdFilter) filteredLogs = filteredLogs.filter(l => l.requestId === requestIdFilter);
-            if (since) filteredLogs = filteredLogs.filter(l => l.timestamp >= since);
-            if (until) filteredLogs = filteredLogs.filter(l => l.timestamp <= until);
-            if (search) {
-              const needle = search.toLowerCase();
-              filteredLogs = filteredLogs.filter(l =>
-                (l.message && l.message.toLowerCase().includes(needle)) ||
-                JSON.stringify(l.context || {}).toLowerCase().includes(needle)
-              );
-            }
-
-            const limitNum = Math.max(1, Math.min(parseInt(limitParam || '200'), LOGS_MAX_ENTRIES));
-            if (filteredLogs.length > limitNum) {
-              filteredLogs = filteredLogs.slice(-limitNum);
-            }
+            const filteredLogs = logsResult.logs;
 
             if (format === 'ndjson') {
               const ndjson = filteredLogs.map(l => JSON.stringify(l)).join('\n') + (filteredLogs.length ? '\n' : '');
@@ -285,7 +438,7 @@ Bun.serve({
             }
 
             const body = {
-              total_logs: logs.length,
+              total_logs: logsResult.total,
               filtered_logs: filteredLogs.length,
               logs: filteredLogs,
               server_info: {
@@ -293,6 +446,8 @@ Bun.serve({
                 memory: process.memoryUsage(),
                 environment: process.env.NODE_ENV || 'development'
               },
+              sources: logsResult.sources,
+              error: logsResult.error,
               request_id: requestId
             };
 

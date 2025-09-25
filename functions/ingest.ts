@@ -203,37 +203,56 @@ export class LeadProcessingPipeline {
         comparison = { similarity: 0, discrepancies: ['Comparison failed'], recommendations: ['Manual review recommended'] };
       }
 
-      // Parse extracted text for business information
-      this.logger.info('📊 PARSING: Extracting business information from text', { leadId: lead.id });
+      // Enhanced parsing: Combine OCR results with intelligent subject analysis
+      this.logger.info('📊 ENHANCED PARSING: Combining OCR with intelligent subject analysis', { leadId: lead.id });
 
       let parsedData;
       try {
-        parsedData = this.parseBusinessInfo(ocrResult.text);
+        // Extract from OCR text
+        const ocrParsedData = this.parseBusinessInfo(ocrResult.text);
+        
+        // Extract from image analysis business subjects
+        const analysisData = this.extractBusinessDataFromImageAnalysis(imageAnalysis);
+        
+        // Merge and prioritize the data sources
+        parsedData = this.mergeBusinessData(ocrParsedData, analysisData);
 
-        this.logger.info('✅ PARSING: Business information extracted', {
+        this.logger.info('✅ ENHANCED PARSING: Business information extracted and merged', {
           leadId: lead.id,
           businessName: parsedData.businessName,
           hasPhone: !!parsedData.phoneNumber,
           hasEmail: !!parsedData.email,
           hasWebsite: !!parsedData.website,
           hasAddress: !!parsedData.address,
-          servicesCount: parsedData.services?.length || 0
+          servicesCount: parsedData.services?.length || 0,
+          dataSourceMetrics: {
+            ocrExtractions: Object.values(ocrParsedData).filter(v => v).length,
+            imageAnalysisExtractions: Object.values(analysisData).filter(v => v && (Array.isArray(v) ? v.length > 0 : true)).length,
+            subjectIsolationSuccess: imageAnalysis.subjectAnalysis?.subjectIsolationSuccess,
+            businessRelevanceScore: imageAnalysis.subjectAnalysis?.businessRelevanceScore
+          }
         });
       } catch (parseError) {
-        this.logger.error('❌ PARSING ERROR: Failed to parse business information', {
+        this.logger.error('❌ ENHANCED PARSING ERROR: Failed to parse business information', {
           leadId: lead.id,
           error: parseError instanceof Error ? parseError.message : String(parseError),
-          text: ocrResult.text.substring(0, 200) + '...'
+          text: ocrResult.text.substring(0, 200) + '...',
+          hasImageAnalysis: !!imageAnalysis.subjectAnalysis
         });
-        // Set default values for failed parsing
-        parsedData = {
-          businessName: null,
-          phoneNumber: null,
-          email: null,
-          website: null,
-          address: null,
-          services: []
-        };
+        // Fallback to basic OCR parsing
+        try {
+          parsedData = this.parseBusinessInfo(ocrResult.text);
+        } catch (fallbackError) {
+          // Set default values for complete parsing failure
+          parsedData = {
+            businessName: null,
+            phoneNumber: null,
+            email: null,
+            website: null,
+            address: null,
+            services: []
+          };
+        }
       }
 
       // Update lead with OCR results and image analysis
@@ -251,8 +270,8 @@ export class LeadProcessingPipeline {
           ocr_completed_at: new Date().toISOString(),
           enrichment_started_at: new Date().toISOString(),
         },
-        // Store image analysis results in source_notes for now
-        source_notes: `${lead.source_notes || ''}\n\nIMAGE ANALYSIS:\nShape: ${imageAnalysis.mainSubject.shape}\nColors: ${imageAnalysis.mainSubject.colors.join(', ')}\nEstimated Text: ${imageAnalysis.mainSubject.estimatedText.join(' | ')}\nLayout: ${imageAnalysis.mainSubject.layout}\nConfidence: ${imageAnalysis.confidence}\nSimilarity to OCR: ${comparison.similarity}\n\nVISUAL DESCRIPTION:\n${imageAnalysis.visualDescription}`.trim(),
+        // Store comprehensive image analysis results including subject analysis
+        source_notes: `${lead.source_notes || ''}\n\nENHANCED IMAGE ANALYSIS:\nShape: ${imageAnalysis.mainSubject.shape}\nColors: ${imageAnalysis.mainSubject.colors.join(', ')}\nEstimated Text: ${imageAnalysis.mainSubject.estimatedText.join(' | ')}\nLayout: ${imageAnalysis.mainSubject.layout}\nConfidence: ${imageAnalysis.confidence}\nSimilarity to OCR: ${comparison.similarity}\n\nSUBJECT ANALYSIS:\nPrimary Subject: ${imageAnalysis.subjectAnalysis?.primaryBusinessSubject?.type || 'unknown'}\nSubject Description: ${imageAnalysis.subjectAnalysis?.primaryBusinessSubject?.description || 'N/A'}\nBusiness Relevance Score: ${imageAnalysis.subjectAnalysis?.businessRelevanceScore || 0}\nSubject Isolation Success: ${imageAnalysis.subjectAnalysis?.subjectIsolationSuccess || false}\nDetected Subjects: ${imageAnalysis.subjectAnalysis?.detectedSubjects?.length || 0}\nOther Objects: ${imageAnalysis.subjectAnalysis?.otherObjects?.join(', ') || 'none detected'}\n\nVISUAL DESCRIPTION:\n${imageAnalysis.visualDescription}`.trim(),
       });
 
       this.logger.info('Enhanced OCR processing completed', {
@@ -657,6 +676,74 @@ P.S. This is a genuine opportunity - we've helped similar businesses increase th
       emailDraft,
       // TODO: Generate preview website URL
       previewWebsiteUrl: undefined,
+    };
+  }
+
+  /**
+   * Extract business data from intelligent image analysis
+   */
+  private extractBusinessDataFromImageAnalysis(imageAnalysis: any): {
+    businessName?: string;
+    phoneNumber?: string;
+    email?: string;
+    website?: string;
+    address?: string;
+    services: string[];
+  } {
+    // Get the primary business subject from image analysis
+    const primarySubject = imageAnalysis.subjectAnalysis?.primaryBusinessSubject;
+    
+    if (!primarySubject || !primarySubject.businessData) {
+      return { services: [] };
+    }
+
+    const businessData = primarySubject.businessData;
+    
+    return {
+      businessName: businessData.businessName || undefined,
+      phoneNumber: businessData.phoneNumber || undefined,
+      email: businessData.email || undefined,
+      website: businessData.website || undefined,
+      address: businessData.address || undefined,
+      services: businessData.services || [],
+    };
+  }
+
+  /**
+   * Merge business data from multiple sources, prioritizing the most reliable data
+   */
+  private mergeBusinessData(
+    ocrData: any,
+    imageAnalysisData: any
+  ): {
+    businessName?: string;
+    phoneNumber?: string;
+    email?: string;
+    website?: string;
+    address?: string;
+    services: string[];
+  } {
+    // Priority: Image analysis for business name and services (more context-aware)
+    // OCR for precise contact details (better at exact text extraction)
+    
+    return {
+      // Prioritize image analysis for business name (better context understanding)
+      businessName: imageAnalysisData.businessName || ocrData.businessName || undefined,
+      
+      // Prioritize OCR for contact details (better precision)
+      phoneNumber: ocrData.phoneNumber || imageAnalysisData.phoneNumber || undefined,
+      email: ocrData.email || imageAnalysisData.email || undefined,
+      website: ocrData.website || imageAnalysisData.website || undefined,
+      address: ocrData.address || imageAnalysisData.address || undefined,
+      
+      // Combine services from both sources
+      services: [
+        ...(imageAnalysisData.services || []),
+        ...(ocrData.services || [])
+      ].filter((service, index, array) => 
+        // Remove duplicates (case-insensitive)
+        array.findIndex(s => s.toLowerCase() === service.toLowerCase()) === index
+      ).slice(0, 10) // Limit to 10 services
     };
   }
 }

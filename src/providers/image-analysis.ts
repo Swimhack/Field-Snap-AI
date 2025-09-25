@@ -16,6 +16,34 @@ export interface ImageDescription {
   };
   confidence: number;
   processingTime: number;
+  // Enhanced subject analysis
+  subjectAnalysis: {
+    detectedSubjects: BusinessSubject[];
+    primaryBusinessSubject: BusinessSubject | null;
+    otherObjects: string[];
+    subjectIsolationSuccess: boolean;
+    businessRelevanceScore: number;
+  };
+}
+
+export interface BusinessSubject {
+  type: 'business_sign' | 'storefront' | 'business_card' | 'advertisement' | 'vehicle_wrap' | 'billboard' | 'banner' | 'unknown';
+  description: string;
+  location: {
+    position: 'center' | 'left' | 'right' | 'top' | 'bottom' | 'corner';
+    sizeRelative: 'large' | 'medium' | 'small';
+    coordinates?: { x: number; y: number; width: number; height: number };
+  };
+  businessData: {
+    businessName?: string;
+    phoneNumber?: string;
+    website?: string;
+    services?: string[];
+    address?: string;
+    operatingHours?: string;
+  };
+  textContent: string[];
+  confidence: number;
 }
 
 export interface ImageAnalysisProvider {
@@ -62,19 +90,33 @@ class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
               content: [
                 {
                   type: 'text',
-                  text: `Analyze this image and provide a thorough description of the main subject, focusing on:
+                  text: `You are an expert at analyzing business photos to identify and isolate business signage, advertisements, and other business-related subjects. Analyze this image with the following objectives:
 
-1. SHAPE ANALYSIS: Describe the primary shape(s) in the image - are they rectangular, square, circular, or irregular?
+**PRIMARY TASK: INTELLIGENT SUBJECT IDENTIFICATION**
+1. IDENTIFY ALL BUSINESS SUBJECTS: Look for business signs, storefronts, business cards, advertisements, vehicle wraps, billboards, banners, or any display showing business information.
 
-2. COLOR ANALYSIS: List all visible colors, especially prominent ones and text colors.
+2. ISOLATE THE MAIN BUSINESS SUBJECT: Determine which business-related element is the primary focus that the user intended to capture. Ignore irrelevant objects like random people, cars, buildings, or background elements that aren't the business subject.
 
-3. TEXT ESTIMATION: Before doing OCR, visually estimate what text might be present based on letter shapes, word patterns, and layout.
+3. EXTRACT BUSINESS DATA: From the identified business subject, extract:
+   - Business name
+   - Phone numbers
+   - Email addresses
+   - Website URLs
+   - Physical addresses
+   - Services offered
+   - Operating hours
+   - Any other business information
 
-4. LAYOUT DESCRIPTION: Describe how elements are arranged - horizontally, vertically, or mixed layout.
+4. DESCRIBE DATA DISPLAY: Explain what type of data is being displayed and how it's organized (contact info, services, hours, etc.).
 
-5. VISUAL DESCRIPTION: Provide a comprehensive description of what you see, focusing on business signage, text blocks, and any rectangular or square elements with words.
+5. SPATIAL ANALYSIS: Describe the location, size, and position of the business subject within the image.
 
-Please be very thorough and descriptive, as this analysis will be compared with OCR results to ensure accuracy.
+**SECONDARY ANALYSIS:**
+- Shape and color analysis of the business subject
+- Text layout and organization
+- Overall visual assessment
+
+Please be extremely thorough in identifying business subjects and isolating them from irrelevant objects.
 
 Format your response as JSON:
 {
@@ -85,7 +127,32 @@ Format your response as JSON:
     "estimatedText": ["estimated text line 1", "estimated text line 2", "..."],
     "layout": "horizontal|vertical|mixed|unknown"
   },
-  "confidence": 0.0-1.0
+  "confidence": 0.0-1.0,
+  "subjectAnalysis": {
+    "detectedSubjects": [
+      {
+        "type": "business_sign|storefront|business_card|advertisement|vehicle_wrap|billboard|banner|unknown",
+        "description": "detailed description of this specific business subject",
+        "location": {
+          "position": "center|left|right|top|bottom|corner",
+          "sizeRelative": "large|medium|small"
+        },
+        "businessData": {
+          "businessName": "extracted business name if visible",
+          "phoneNumber": "extracted phone if visible",
+          "website": "extracted website if visible",
+          "services": ["service1", "service2"],
+          "address": "extracted address if visible"
+        },
+        "textContent": ["all visible text on this subject"],
+        "confidence": 0.0-1.0
+      }
+    ],
+    "primaryBusinessSubject": "index of the main business subject the user intended to capture (0-based), or null if none",
+    "otherObjects": ["list of non-business objects visible in image"],
+    "subjectIsolationSuccess": true/false,
+    "businessRelevanceScore": 0.0-1.0
+  }
 }`,
                 },
                 {
@@ -133,6 +200,15 @@ Format your response as JSON:
         },
         confidence: analysisResult.confidence || 0.7,
         processingTime: Date.now() - startTime,
+        subjectAnalysis: {
+          detectedSubjects: analysisResult.subjectAnalysis?.detectedSubjects || [],
+          primaryBusinessSubject: analysisResult.subjectAnalysis?.primaryBusinessSubject !== undefined 
+            ? (analysisResult.subjectAnalysis.detectedSubjects?.[analysisResult.subjectAnalysis.primaryBusinessSubject] || null)
+            : null,
+          otherObjects: analysisResult.subjectAnalysis?.otherObjects || [],
+          subjectIsolationSuccess: analysisResult.subjectAnalysis?.subjectIsolationSuccess || false,
+          businessRelevanceScore: analysisResult.subjectAnalysis?.businessRelevanceScore || 0.5,
+        },
       };
 
     } catch (error) {
@@ -218,6 +294,47 @@ class MockImageAnalysisProvider implements ImageAnalysisProvider {
           layout: 'vertical' as const,
         },
         confidence: 0.92,
+        subjectAnalysis: {
+          detectedSubjects: [
+            {
+              type: 'business_sign' as const,
+              description: 'Professional plumbing services business sign with contact information',
+              location: {
+                position: 'center' as const,
+                sizeRelative: 'large' as const,
+              },
+              businessData: {
+                businessName: 'ABC Plumbing Services',
+                phoneNumber: '(555) 123-4567',
+                website: undefined,
+                services: ['24/7 Emergency Service', 'Plumbing'],
+                address: undefined,
+              },
+              textContent: ['ABC Plumbing Services', 'Phone: (555) 123-4567', 'info@abcplumbing.com', '24/7 Emergency Service'],
+              confidence: 0.92,
+            }
+          ],
+          primaryBusinessSubject: {
+            type: 'business_sign' as const,
+            description: 'Professional plumbing services business sign with contact information',
+            location: {
+              position: 'center' as const,
+              sizeRelative: 'large' as const,
+            },
+            businessData: {
+              businessName: 'ABC Plumbing Services',
+              phoneNumber: '(555) 123-4567',
+              website: undefined,
+              services: ['24/7 Emergency Service', 'Plumbing'],
+              address: undefined,
+            },
+            textContent: ['ABC Plumbing Services', 'Phone: (555) 123-4567', 'info@abcplumbing.com', '24/7 Emergency Service'],
+            confidence: 0.92,
+          },
+          otherObjects: ['wall', 'mounting hardware'],
+          subjectIsolationSuccess: true,
+          businessRelevanceScore: 0.95,
+        },
       },
       {
         visualDescription: "A square-shaped business sign with a green background and white text. The sign has decorative elements around the border and displays landscaping service information in a centered layout. There appear to be small graphic elements or icons integrated with the text.",
@@ -228,6 +345,47 @@ class MockImageAnalysisProvider implements ImageAnalysisProvider {
           layout: 'vertical' as const,
         },
         confidence: 0.88,
+        subjectAnalysis: {
+          detectedSubjects: [
+            {
+              type: 'business_sign' as const,
+              description: 'Landscaping business sign with decorative border and service offerings',
+              location: {
+                position: 'center' as const,
+                sizeRelative: 'medium' as const,
+              },
+              businessData: {
+                businessName: "Maria's Landscaping",
+                phoneNumber: '(555) 987-6543',
+                website: undefined,
+                services: ['Professional Tree Trimming', 'Landscaping'],
+                address: undefined,
+              },
+              textContent: ["Maria's Landscaping", '(555) 987-6543', 'Professional Tree Trimming', 'Free Estimates!'],
+              confidence: 0.88,
+            }
+          ],
+          primaryBusinessSubject: {
+            type: 'business_sign' as const,
+            description: 'Landscaping business sign with decorative border and service offerings',
+            location: {
+              position: 'center' as const,
+              sizeRelative: 'medium' as const,
+            },
+            businessData: {
+              businessName: "Maria's Landscaping",
+              phoneNumber: '(555) 987-6543',
+              website: undefined,
+              services: ['Professional Tree Trimming', 'Landscaping'],
+              address: undefined,
+            },
+            textContent: ["Maria's Landscaping", '(555) 987-6543', 'Professional Tree Trimming', 'Free Estimates!'],
+            confidence: 0.88,
+          },
+          otherObjects: ['grass', 'background foliage'],
+          subjectIsolationSuccess: true,
+          businessRelevanceScore: 0.90,
+        },
       },
       {
         visualDescription: "A rectangular business card or sign with a blue background and white/yellow text. The layout is organized with the business name at the top, followed by credentials and contact information. The text appears to be in different sizes to create visual hierarchy.",
@@ -238,6 +396,47 @@ class MockImageAnalysisProvider implements ImageAnalysisProvider {
           layout: 'horizontal' as const,
         },
         confidence: 0.85,
+        subjectAnalysis: {
+          detectedSubjects: [
+            {
+              type: 'business_card' as const,
+              description: 'Professional electrical services business card with licensing credentials',
+              location: {
+                position: 'center' as const,
+                sizeRelative: 'large' as const,
+              },
+              businessData: {
+                businessName: 'Johnson Electrical',
+                phoneNumber: '555-456-7890',
+                website: undefined,
+                services: ['Residential Electrical', 'Commercial Electrical'],
+                address: undefined,
+              },
+              textContent: ['Johnson Electrical', 'Licensed Electrician', 'Call: 555-456-7890', 'Residential & Commercial'],
+              confidence: 0.85,
+            }
+          ],
+          primaryBusinessSubject: {
+            type: 'business_card' as const,
+            description: 'Professional electrical services business card with licensing credentials',
+            location: {
+              position: 'center' as const,
+              sizeRelative: 'large' as const,
+            },
+            businessData: {
+              businessName: 'Johnson Electrical',
+              phoneNumber: '555-456-7890',
+              website: undefined,
+              services: ['Residential Electrical', 'Commercial Electrical'],
+              address: undefined,
+            },
+            textContent: ['Johnson Electrical', 'Licensed Electrician', 'Call: 555-456-7890', 'Residential & Commercial'],
+            confidence: 0.85,
+          },
+          otherObjects: ['hand holding card', 'background surface'],
+          subjectIsolationSuccess: true,
+          businessRelevanceScore: 0.92,
+        },
       },
     ];
 
