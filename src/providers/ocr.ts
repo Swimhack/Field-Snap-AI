@@ -485,8 +485,8 @@ class TesseractOCRProvider implements OCRProvider {
       case 'addresses':
         return baseChars + businessChars + '#';
       case 'business_signs':
-        // Simplified character set to avoid Unicode parsing issues
-        return baseChars + businessChars + '---';
+        // Simplified character set to avoid parsing issues
+        return baseChars + businessChars;
       case 'licenses':
         return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -';
       default:
