@@ -474,19 +474,19 @@ class TesseractOCRProvider implements OCRProvider {
 
   private getCharacterWhitelist(): string {
     const contentType = process.env.TESSERACT_CONTENT_TYPE || 'business_sign';
-    
+
     // Base character set for business content
     const baseChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,()-';
     const businessChars = '@#$%&+/:;?!\'"';
-    const extendedChars = '°™®©€£¥§¶†‡•…""''--';
-    
+
     switch (contentType) {
       case 'phone_numbers':
         return '0123456789 ()-+.';
       case 'addresses':
         return baseChars + businessChars + '#';
       case 'business_signs':
-        return baseChars + businessChars + extendedChars;
+        // Simplified character set to avoid Unicode parsing issues
+        return baseChars + businessChars + '---';
       case 'licenses':
         return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -';
       default:
