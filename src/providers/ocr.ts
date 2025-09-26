@@ -478,7 +478,7 @@ class TesseractOCRProvider implements OCRProvider {
     // Base character set for business content
     const baseChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,()-';
     const businessChars = '@#$%&+/:;?!\'"';
-    const extendedChars = '°™®©€£¥§¶†‡•…""''–—';
+    const extendedChars = '°™®©€£¥§¶†‡•…""''--';
     
     switch (contentType) {
       case 'phone_numbers':
