@@ -696,5 +696,46 @@ function createDatabaseInstance() {
   }
 }
 
-export const db = createDatabaseInstance();
+// Global database instance with fallback
+let _db: any = null;
+
+function getDatabaseInstance() {
+  if (!_db) {
+    try {
+      _db = createDatabaseInstance();
+    } catch (error) {
+      console.warn('Database initialization failed, using mock database:', error);
+      _db = mockDb;
+    }
+  }
+  return _db;
+}
+
+export const db = new Proxy({} as any, {
+  get(target, prop) {
+    const dbInstance = getDatabaseInstance();
+    const method = dbInstance[prop];
+    
+    if (typeof method === 'function') {
+      return async (...args: any[]) => {
+        try {
+          return await method.apply(dbInstance, args);
+        } catch (error) {
+          // If the operation fails and we're not already using mock, try mock
+          if (dbInstance !== mockDb && error instanceof Error && 
+              (error.message.includes('Unable to connect') || 
+               error.message.includes('Was there a typo') ||
+               error.message.includes('MOCK_DATABASE_REQUIRED'))) {
+            console.warn('Database operation failed, falling back to mock database:', error.message);
+            _db = mockDb;
+            return await mockDb[prop].apply(mockDb, args);
+          }
+          throw error;
+        }
+      };
+    }
+    return method;
+  }
+});
+
 export default db;
