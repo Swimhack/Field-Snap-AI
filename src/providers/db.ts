@@ -75,17 +75,25 @@ class DatabaseProvider {
    * Create a new lead
    */
   async createLead(leadData: CreateLead): Promise<Lead> {
-    const { data, error } = await this.supabase
-      .from('leads')
-      .insert([leadData])
-      .select()
-      .single();
+    try {
+      const { data, error } = await this.supabase
+        .from('leads')
+        .insert([leadData])
+        .select()
+        .single();
 
-    if (error) {
-      throw new Error(`Failed to create lead: ${error.message}`);
+      if (error) {
+        throw new Error(`Failed to create lead: ${error.message}`);
+      }
+
+      return data as Lead;
+    } catch (error) {
+      // If Supabase fails, throw a specific error that will trigger fallback
+      if (error instanceof Error && error.message.includes('Unable to connect')) {
+        throw new Error('MOCK_DATABASE_REQUIRED');
+      }
+      throw error;
     }
-
-    return data as Lead;
   }
 
   /**
@@ -417,17 +425,25 @@ class DatabaseProvider {
    * Create a log entry
    */
   async createLog(logData: CreateLog): Promise<AppLog> {
-    const { data, error } = await this.supabase
-      .from('app_logs')
-      .insert([logData])
-      .select()
-      .single();
+    try {
+      const { data, error } = await this.supabase
+        .from('app_logs')
+        .insert([logData])
+        .select()
+        .single();
 
-    if (error) {
-      throw new Error(`Failed to create log: ${error.message}`);
+      if (error) {
+        throw new Error(`Failed to create log: ${error.message}`);
+      }
+
+      return data as AppLog;
+    } catch (error) {
+      // If Supabase fails, throw a specific error that will trigger fallback
+      if (error instanceof Error && error.message.includes('Unable to connect')) {
+        throw new Error('MOCK_DATABASE_REQUIRED');
+      }
+      throw error;
     }
-
-    return data as AppLog;
   }
 
   /**
@@ -670,7 +686,8 @@ function createDatabaseInstance() {
          error.message.includes('Invalid API key') ||
          error.message.includes('Missing Supabase') ||
          error.message.includes('fetch') ||
-         error.message.includes('network'))) {
+         error.message.includes('network') ||
+         error.message.includes('SUPABASE_CLIENT_ERROR'))) {
       console.warn('Database connection failed, using mock database for testing...');
       console.warn('Error was:', error.message);
       return mockDb;
