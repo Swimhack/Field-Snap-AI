@@ -9,9 +9,11 @@ COPY package.json package-lock.json* ./
 # Install ALL dependencies (including devDependencies for build)
 RUN npm install
 
-# Copy source code
+# Copy source code (only what we need to build)
 COPY tsconfig.json ./
-COPY src ./src
+COPY src/server.ts ./src/server.ts
+COPY src/core ./src/core
+COPY src/utils ./src/utils
 
 # Build TypeScript
 RUN npm run build
