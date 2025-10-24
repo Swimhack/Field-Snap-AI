@@ -5,8 +5,7 @@
  * structured logging, different log levels, and database persistence.
  */
 
-import type { LogLevel, CreateLog } from '@/core/types';
-import { db } from '@/providers/db';
+import type { LogLevel } from '../core/types.js';
 
 export interface LogContext {
   userId?: string;
@@ -94,10 +93,8 @@ export class Logger {
     // Console logging
     this.logToConsole(level, message, context);
 
-    // Database logging (async, don't block)
-    this.logToDatabase(level, message, context).catch(error => {
-      console.error('Failed to log to database:', error);
-    });
+    // Database logging disabled for now
+    // TODO: Implement database logging when Supabase is integrated
   }
 
   /**
@@ -135,35 +132,6 @@ export class Logger {
     }
   }
 
-  /**
-   * Log to database
-   */
-  private async logToDatabase(level: LogLevel, message: string, context: LogContext): Promise<void> {
-    try {
-      const logData: CreateLog = {
-        level,
-        message,
-        component: this.component,
-        user_id: context.userId,
-        lead_id: context.leadId,
-        request_id: this.requestId || context.requestId,
-        session_id: context.sessionId,
-        stack_trace: context.stack_trace,
-        error_code: context.errorCode,
-        duration_ms: context.duration,
-        data: context.data || {},
-        metadata: {
-          timestamp: new Date().toISOString(),
-          environment: process.env.NODE_ENV || 'development',
-        },
-      };
-
-      await db.createLog(logData);
-    } catch (error) {
-      // Don't throw errors from logging to avoid infinite loops
-      console.error('Database logging failed:', error);
-    }
-  }
 
   /**
    * Create a child logger with additional context
