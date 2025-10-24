@@ -60,6 +60,13 @@ class GoogleVisionProvider implements OCRProvider {
       throw new Error('Google Cloud Vision is not configured');
     }
 
+    // Safely handle base64 data URLs by converting to a temporary object URL
+    if (imageUrl.startsWith('data:')) {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      imageUrl = URL.createObjectURL(blob);
+    }
+
     const startTime = Date.now();
     
     try {
@@ -155,7 +162,9 @@ class OpenAIVisionProvider implements OCRProvider {
     this.apiKey = process.env.OPENAI_API_KEY || '';
     
     if (!this.isConfigured()) {
-      console.warn('OpenAI Vision is not properly configured');
+      console.warn('OpenAI Vision is not properly configured - OPENAI_API_KEY is missing or empty');
+    } else {
+      console.log('OpenAI Vision configured successfully');
     }
   }
 
@@ -174,10 +183,19 @@ class OpenAIVisionProvider implements OCRProvider {
 
   async extractText(imageUrl: string): Promise<OCRResult> {
     if (!this.isConfigured()) {
-      throw new Error('OpenAI Vision is not configured');
+      throw new Error('OpenAI Vision is not configured - OPENAI_API_KEY environment variable is missing');
+    }
+
+    // Normalize base64 data URLs to object URLs to avoid large inline bodies
+    if (imageUrl.startsWith('data:')) {
+      const res = await fetch(imageUrl);
+      const blob = await res.blob();
+      imageUrl = URL.createObjectURL(blob);
     }
 
     const startTime = Date.now();
+    console.log('OpenAI Vision: Starting OCR extraction...');
+    console.log(`OpenAI Vision: API Key configured: ${this.apiKey.substring(0, 7)}...`);
 
     try {
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -220,7 +238,14 @@ class OpenAIVisionProvider implements OCRProvider {
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        const errorBody = await response.text();
+        console.error('OpenAI API Error Response:', errorBody);
+        
+        if (response.status === 401) {
+          throw new Error(`OpenAI API authentication failed (401). Please verify OPENAI_API_KEY is set correctly.`);
+        }
+        
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorBody}`);
       }
 
       const data = await response.json();
@@ -380,6 +405,28 @@ class TesseractOCRProvider implements OCRProvider {
       // Dynamic import for server-side usage
       const { createWorker } = await import('tesseract.js');
 
+      // Function to get image data
+      async function getImageData(url: string): Promise<Buffer | ArrayBuffer> {
+        if (url.startsWith('data:')) {
+          // Extract base64 data
+          const base64Data = url.split(',')[1];
+          if (!base64Data) {
+            throw new Error('Invalid data URL format');
+          }
+          return Buffer.from(base64Data, 'base64');
+        } else if (url.startsWith('http')) {
+          const res = await fetch(url);
+          const arrayBuffer = await res.arrayBuffer();
+          return Buffer.from(arrayBuffer);
+        } else {
+          throw new Error('Unsupported image URL format. Expected data URL or http(s) URL.');
+        }
+      }
+
+      // Get the image data
+      console.log('📥 Getting image data...');
+      const imageData = await getImageData(imageUrl);
+
       // Get configuration
       const languages = this.getLanguageString();
       const psm = this.getPageSegMode();
@@ -399,11 +446,9 @@ class TesseractOCRProvider implements OCRProvider {
 
       console.log(`🖼️ Processing image with Enhanced Tesseract...`);
       
-      // Perform OCR with additional output options for debugging
-      const recognitionOptions = this.getRecognitionOptions();
-      const outputOptions = this.getOutputOptions();
-      
-      const { data } = await worker.recognize(imageUrl, recognitionOptions, outputOptions);
+      // Perform OCR using raw image data
+      console.log('🔍 Running OCR on image...');
+      const { data } = await worker.recognize(imageData);
 
       const processingTime = Date.now() - startTime;
       console.log(`✅ Enhanced Tesseract completed in ${processingTime}ms`);

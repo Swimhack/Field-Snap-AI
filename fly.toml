@@ -26,7 +26,7 @@ primary_region = "dfw"
   timeout = "2s"
 
 [processes]
-  app = "bun run production-server.ts"
+  app = "node dist/server.js"
 
 [[vm]]
   cpu_kind = "shared"

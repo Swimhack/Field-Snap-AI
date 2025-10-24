@@ -376,6 +376,8 @@ export const OCRResultSchema = z.object({
   })).optional(),
   detectedLanguage: z.string().optional(),
   processingTime: z.number().optional(),
+  provider: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
 });
 
 // Lead scoring result schema
