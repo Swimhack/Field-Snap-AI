@@ -1,20 +1,33 @@
 # Field Snap AI - Web App Production Dockerfile
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install ALL dependencies (including devDependencies for build)
+RUN npm install
+
+# Copy source code
+COPY tsconfig.json ./
+COPY src ./src
+
+# Build TypeScript
+RUN npm run build
+
+# Production stage
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies first (better caching)
+# Copy package files and install only production dependencies
 COPY package.json package-lock.json* ./
 RUN npm ci --only=production
 
-# Copy TypeScript config and source
-COPY tsconfig.json ./
-COPY src ./src
+# Copy built files from builder
+COPY --from=builder /app/dist ./dist
 COPY public ./public
-
-# Build TypeScript
-RUN npm install -g typescript
-RUN tsc
 
 # Set environment
 ENV NODE_ENV=production
