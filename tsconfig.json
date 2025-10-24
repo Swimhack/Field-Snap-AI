@@ -21,7 +21,7 @@
     "declarationMap": false,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./",
+    "rootDir": "./src",
     "removeComments": true,
     "noImplicitAny": false,
     "noImplicitReturns": false,

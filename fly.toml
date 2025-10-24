@@ -1,5 +1,5 @@
 # Fly.io configuration for Field Snap AI
-app = "fieldsnap-ai"
+app = "stech"
 primary_region = "dfw"
 
 [build]
