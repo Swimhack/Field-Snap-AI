@@ -40,13 +40,15 @@
     }
   },
   "include": [
-    "src/**/*",
-    "functions/**/*",
-    "infra/**/*"
+    "src/server.ts",
+    "src/core/**/*",
+    "src/utils/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "*.config.js"
+    "*.config.js",
+    "src/providers/**/*",
+    "functions/**/*"
   ]
 }
