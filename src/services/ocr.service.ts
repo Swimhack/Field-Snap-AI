@@ -94,7 +94,7 @@ If any field is not found, use null. Be thorough and extract every piece of text
         throw new Error(`OpenAI API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data: any = await response.json();
       const content = data.choices?.[0]?.message?.content;
       
       if (!content) {
