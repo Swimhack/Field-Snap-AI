@@ -167,21 +167,21 @@ async function processImage() {
 
         showProcessingStatus('Processing complete!');
 
-        // For now, create mock data since OCR isn't implemented yet
+        // Use real OCR data from backend
         app.extractedData = {
             id: result.leadId || generateId(),
-            businessName: 'Business Name (OCR Not Implemented)',
-            phoneNumber: '',
-            email: '',
-            website: '',
-            address: '',
-            services: [],
+            businessName: result.data?.businessName || 'Not found',
+            phoneNumber: result.data?.phoneNumber || '',
+            email: result.data?.email || '',
+            website: result.data?.website || '',
+            address: result.data?.address || '',
+            services: result.data?.services || [],
             socialMedia: {},
-            rawText: '',
+            rawText: result.data?.rawText || '',
             imageData: app.currentImageData,
             capturedAt: new Date().toISOString(),
-            leadScore: 0,
-            qualificationStatus: 'pending',
+            leadScore: Math.round((result.data?.confidence || 0) * 100),
+            qualificationStatus: result.data?.confidence > 0.7 ? 'qualified' : 'pending',
             uploadSuccess: true,
             filename: result.data?.filename || 'unknown',
             filesize: result.data?.size || 0

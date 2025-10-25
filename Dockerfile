@@ -14,6 +14,7 @@ COPY tsconfig.json ./
 COPY src/server.ts ./src/server.ts
 COPY src/core ./src/core
 COPY src/utils ./src/utils
+COPY src/services ./src/services
 
 # Build TypeScript
 RUN npm run build

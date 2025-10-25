@@ -42,7 +42,8 @@
   "include": [
     "src/server.ts",
     "src/core/**/*",
-    "src/utils/**/*"
+    "src/utils/**/*",
+    "src/services/**/*"
   ],
   "exclude": [
     "node_modules",

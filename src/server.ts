@@ -11,6 +11,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { ocrService } from './services/ocr.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -50,6 +51,43 @@ app.use(express.urlencoded({ extended: true }));
 const publicPath = path.join(__dirname, '../public');
 app.use(express.static(publicPath));
 
+// In-memory error log storage (for debugging)
+const errorLogs: Array<{
+  timestamp: string;
+  method: string;
+  path: string;
+  error: string;
+  stack?: string;
+  body?: any;
+  query?: any;
+  headers?: any;
+}> = [];
+
+const MAX_ERROR_LOGS = 100;
+
+function logError(req: Request, error: any) {
+  const errorLog = {
+    timestamp: new Date().toISOString(),
+    method: req.method,
+    path: req.path,
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    body: req.body,
+    query: req.query,
+    headers: {
+      'user-agent': req.get('user-agent'),
+      'content-type': req.get('content-type'),
+    },
+  };
+  
+  errorLogs.unshift(errorLog);
+  if (errorLogs.length > MAX_ERROR_LOGS) {
+    errorLogs.pop();
+  }
+  
+  console.error('ERROR:', JSON.stringify(errorLog, null, 2));
+}
+
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -73,31 +111,52 @@ app.get('/health', (req: Request, res: Response) => {
  */
 app.post('/api/leads', upload.single('image'), async (req: Request, res: Response) => {
   try {
+    console.log('POST /api/leads - Request received');
+    console.log('Headers:', req.headers);
+    console.log('File:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'No file');
+    
     if (!req.file) {
+      const error = new Error('No image file provided');
+      logError(req, error);
       return res.status(400).json({ 
         error: 'No image file provided',
         message: 'Please upload an image file'
       });
     }
 
-    // TODO: Process image with OCR
-    // TODO: Enrich lead data
+    // Process image with OCR
+    console.log('Processing image with OCR...');
+    const ocrResult = await ocrService.extractBusinessInfo(req.file.buffer);
+    console.log('OCR extraction complete:', ocrResult);
+
+    // Generate a unique lead ID
+    const leadId = `lead_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // TODO: Enrich lead data with web search
     // TODO: Score and qualify lead
     // TODO: Save to Supabase
 
+    console.log('Successfully processed image');
     res.json({
       success: true,
-      message: 'Lead processing started',
-      leadId: 'temp-id',
-      // Temporary response until full implementation
+      message: 'Lead processing completed',
+      leadId: leadId,
       data: {
         filename: req.file.originalname,
         size: req.file.size,
         mimetype: req.file.mimetype,
+        businessName: ocrResult.businessName,
+        phoneNumber: ocrResult.phoneNumber,
+        email: ocrResult.email,
+        website: ocrResult.website,
+        address: ocrResult.address,
+        services: ocrResult.services,
+        rawText: ocrResult.text,
+        confidence: ocrResult.confidence,
       }
     });
   } catch (error) {
-    console.error('Error processing lead:', error);
+    logError(req, error);
     res.status(500).json({
       error: 'Processing failed',
       message: error instanceof Error ? error.message : 'Unknown error'
