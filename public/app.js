@@ -1,6 +1,6 @@
 // Field Snap AI - Main Application JavaScript
 
-const API_URL = '/api/ingest';
+const API_URL = '/api/leads';
 const STORAGE_KEY = 'fieldsnap_leads';
 
 // Application State
@@ -135,29 +135,22 @@ async function processImage() {
     showProcessingStatus('Uploading image...');
 
     try {
-        // First, compress and convert image to base64 to reduce payload
-        console.log('Compressing image...');
-        const imageUrl = await compressAndEncodeImage(app.currentImage);
-        console.log('Image converted, size:', imageUrl.length, 'characters');
+        showProcessingStatus('Uploading image to server...');
 
-        showProcessingStatus('Extracting text from image...');
-
-        const requestBody = {
-            imageUrl: imageUrl,
-            sourceLocation: 'Field Snap Mobile',
-            sourceNotes: 'Captured via web interface'
-        };
+        // Create FormData for multipart upload
+        const formData = new FormData();
+        formData.append('image', app.currentImage, app.currentImage.name || 'capture.jpg');
+        formData.append('sourceLocation', 'Field Snap Mobile');
+        formData.append('sourceNotes', 'Captured via web interface');
 
         console.log('Sending request to API:', API_URL);
-        console.log('Request body size:', JSON.stringify(requestBody).length, 'characters');
+        console.log('Image size:', app.currentImage.size, 'bytes');
 
         // Call the backend API
         const response = await fetch(API_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
+            body: formData
+            // Don't set Content-Type - browser will set it with boundary
         });
 
         console.log('API response status:', response.status);
@@ -170,32 +163,28 @@ async function processImage() {
         }
 
         const result = await response.json();
+        console.log('Upload result:', result);
 
-        showProcessingStatus('Fetching processed lead details...');
+        showProcessingStatus('Processing complete!');
 
-        // Fetch real lead details from the API
-        const leadRes = await fetch(`/api/leads/${result.leadId}`);
-        if (!leadRes.ok) {
-            const errText = await leadRes.text();
-            throw new Error(`Failed to fetch lead details: ${leadRes.status} ${errText}`);
-        }
-        const leadDetails = await leadRes.json();
-
-        // Use actual data returned by backend
+        // For now, create mock data since OCR isn't implemented yet
         app.extractedData = {
-            id: leadDetails.id || generateId(),
-            businessName: leadDetails.business_name || '',
-            phoneNumber: leadDetails.phone_number || '',
-            email: leadDetails.email || '',
-            website: leadDetails.website || '',
-            address: leadDetails.address || '',
-            services: Array.isArray(leadDetails.services) ? leadDetails.services : [],
-            socialMedia: leadDetails.social_media || {},
-            rawText: leadDetails.raw_ocr_text || '',
+            id: result.leadId || generateId(),
+            businessName: 'Business Name (OCR Not Implemented)',
+            phoneNumber: '',
+            email: '',
+            website: '',
+            address: '',
+            services: [],
+            socialMedia: {},
+            rawText: '',
             imageData: app.currentImageData,
-            capturedAt: leadDetails.updated_at || new Date().toISOString(),
-            leadScore: leadDetails.lead_score || 0,
-            qualificationStatus: leadDetails.qualification_status || 'pending'
+            capturedAt: new Date().toISOString(),
+            leadScore: 0,
+            qualificationStatus: 'pending',
+            uploadSuccess: true,
+            filename: result.data?.filename || 'unknown',
+            filesize: result.data?.size || 0
         };
 
         // Search for additional information if missing
